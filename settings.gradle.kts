@@ -32,3 +32,5 @@ include(":core:navigation")
 
 include(":feature:home:api")
 include(":feature:home:impl")
+
+include(":core:download_manager")

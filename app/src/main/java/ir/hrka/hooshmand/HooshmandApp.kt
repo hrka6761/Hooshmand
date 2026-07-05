@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import ir.hrka.hooshmand.home.impl.homeEntry
+import ir.hrka.hooshmand.ai_chat.impl.aiChatEntry
 import ir.hrka.hooshmand.navigation.NavigationState
 import ir.hrka.hooshmand.navigation.Navigator
 import ir.hrka.hooshmand.navigation.toEntries
@@ -29,6 +30,7 @@ fun HooshmandApp(
         ) {
             val entryProvider = entryProvider {
                 homeEntry(navigator)
+                aiChatEntry(navigator)
             }
 
             NavDisplay(

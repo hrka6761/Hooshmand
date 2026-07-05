@@ -33,4 +33,7 @@ include(":core:navigation")
 include(":feature:home:api")
 include(":feature:home:impl")
 
+include(":feature:ai_chat:api")
+include(":feature:ai_chat:impl")
+
 include(":core:download_manager")

@@ -26,4 +26,7 @@ dependencies {
 
     implementation(projects.feature.home.api)
     implementation(projects.feature.home.impl)
+
+    implementation(projects.feature.aiChat.api)
+    implementation(projects.feature.aiChat.impl)
 }

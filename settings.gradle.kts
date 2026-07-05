@@ -29,11 +29,10 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 include(":app")
 
 include(":core:navigation")
+include(":core:download_manager")
+include(":core:datastore")
 
 include(":feature:home:api")
 include(":feature:home:impl")
-
 include(":feature:ai_chat:api")
 include(":feature:ai_chat:impl")
-
-include(":core:download_manager")

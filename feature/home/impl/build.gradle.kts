@@ -12,4 +12,6 @@ android {
 
 dependencies {
     implementation(projects.feature.home.api)
+    implementation(projects.feature.aiChat.api)
+    implementation(libs.lottie.compose)
 }

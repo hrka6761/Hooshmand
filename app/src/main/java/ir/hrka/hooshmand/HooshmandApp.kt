@@ -10,7 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import ir.hrka.hooshmand.home.impl.navigation.homeEntry
-import ir.hrka.hooshmand.ai_chat.impl.aiChatEntry
+import ir.hrka.hooshmand.ai_chat.impl.navigation.aiChatEntry
+import ir.hrka.hooshmand.ai_chat_history.impl.navigation.aiChatHistoryEntry
 import ir.hrka.hooshmand.navigation.NavigationState
 import ir.hrka.hooshmand.navigation.Navigator
 import ir.hrka.hooshmand.navigation.toEntries
@@ -32,6 +33,7 @@ fun HooshmandApp(
         ) {
             val entryProvider = entryProvider {
                 homeEntry(navigator)
+                aiChatHistoryEntry(navigator)
                 aiChatEntry(navigator)
             }
 

@@ -1,4 +1,4 @@
-package ir.hrka.hooshmand.ai_chat.impl
+package ir.hrka.hooshmand.ai_chat.impl.navigation
 
 import androidx.compose.material3.Text
 import androidx.navigation3.runtime.EntryProviderScope

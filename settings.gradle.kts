@@ -34,5 +34,7 @@ include(":core:datastore")
 
 include(":feature:home:api")
 include(":feature:home:impl")
+include(":feature:ai_chat_history:api")
+include(":feature:ai_chat_history:impl")
 include(":feature:ai_chat:api")
 include(":feature:ai_chat:impl")

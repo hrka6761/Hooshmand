@@ -7,11 +7,9 @@ plugins {
 }
 
 android {
-    namespace = "ir.hrka.hooshmand.home.impl"
+    namespace = "ir.hrka.hooshmand.ai_chat_history.impl"
 }
 
 dependencies {
-    implementation(projects.feature.home.api)
     implementation(projects.feature.aiChatHistory.api)
-    implementation(libs.lottie.compose)
 }

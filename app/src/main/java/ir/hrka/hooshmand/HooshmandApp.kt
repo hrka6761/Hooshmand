@@ -33,8 +33,8 @@ fun HooshmandApp(
         ) {
             val entryProvider = entryProvider {
                 homeEntry(navigator)
-                aiChatHistoryEntry(navigator)
                 aiChatEntry(navigator)
+                aiChatHistoryEntry(navigator)
             }
 
             NavDisplay(

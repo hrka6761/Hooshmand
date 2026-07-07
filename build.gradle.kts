@@ -7,3 +7,11 @@ plugins {
     alias(libs.plugins.hilt.android) apply false
     alias(libs.plugins.jetbrains.kotlin.serialization)
 }
+
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            force("androidx.fragment:fragment:1.5.1")
+        }
+    }
+}

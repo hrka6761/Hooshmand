@@ -133,7 +133,7 @@ internal data class DownloadWorkInput(
                     parts = parts,
                     fileName = parts.first().fileName,
                     directories = directories,
-                    fileSize = totalSizeOfParts(parts),
+                    fileSize = totalSizeOfParts(parts) ?: multipart.totalFileSize,
                     headers = emptyMap(),
                     checksum = null,
                     storageLocation = storageLocation,

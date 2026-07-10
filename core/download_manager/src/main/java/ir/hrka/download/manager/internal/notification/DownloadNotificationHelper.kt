@@ -141,12 +141,26 @@ internal class DownloadNotificationHelper(
      * or [DownloadWorkActions.ACTION_STOP].
      */
     private fun actionPendingIntent(action: String): PendingIntent {
-        val intent = Intent(context, DownloadActionReceiver::class.java).apply {
-            this.action = action
-            putExtra(DownloadWorkActions.EXTRA_DOWNLOAD_ID, downloadId)
-        }
+        val intent =
+            Intent(context, DownloadActionReceiver::class.java).apply {
+                setAction(action)
+                setPackage(context.packageName)
+                putExtra(DownloadWorkActions.EXTRA_DOWNLOAD_ID, downloadId)
+            }
+        val requestCode =
+            when (action) {
+                DownloadWorkActions.ACTION_PAUSE -> REQUEST_CODE_PAUSE
+                DownloadWorkActions.ACTION_RESUME -> REQUEST_CODE_RESUME
+                DownloadWorkActions.ACTION_STOP -> REQUEST_CODE_STOP
+                else -> action.hashCode()
+            }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        return PendingIntent.getBroadcast(context, action.hashCode() + downloadId.hashCode(), intent, flags)
+        return PendingIntent.getBroadcast(
+            context,
+            downloadId.hashCode() + requestCode,
+            intent,
+            flags,
+        )
     }
 
     /** Returns whether the notification should remain ongoing (non-dismissible) for [status]. */
@@ -183,6 +197,10 @@ internal class DownloadNotificationHelper(
 
         /** User-visible notification channel name. */
         private const val CHANNEL_NAME = "Downloads"
+
+        private const val REQUEST_CODE_PAUSE = 1
+        private const val REQUEST_CODE_RESUME = 2
+        private const val REQUEST_CODE_STOP = 3
 
         /**
          * Creates a helper bound to the file and job id from [input].

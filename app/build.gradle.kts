@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.hrka.android.application)
     alias(libs.plugins.hrka.android.app.compose)
     alias(libs.plugins.hrka.android.flavors)
+    alias(libs.plugins.hrka.android.hilt)
 }
 
 dependencies {
@@ -23,6 +24,10 @@ dependencies {
 
     // Project modules
     implementation(projects.core.navigation)
+    implementation(projects.core.downloadManager)
+    implementation(projects.core.datastore)
+
+    implementation(libs.androidx.work.runtime.ktx)
 
     implementation(projects.feature.home.api)
     implementation(projects.feature.home.impl)

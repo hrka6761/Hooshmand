@@ -17,7 +17,8 @@ class AndroidFeatureImplConventionPlugin : Plugin<Project> {
                     "implementation"(libs.findLibrary("androidx-navigation3-ui").get())
                     "implementation"(libs.findLibrary("androidx.navigation3.runtime").get())
                     "implementation"(libs.findLibrary("androidx-compose-material-icons-extended").get())
-
+                    "implementation"(libs.findLibrary("androidx-compose-ui-tooling").get())
+                    "implementation"(libs.findLibrary("hilt-navigation-compose").get())
                     "implementation"(project(":core:navigation"))
                 }
             }

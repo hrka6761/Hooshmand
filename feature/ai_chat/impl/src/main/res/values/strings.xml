@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_chat_title">AI Chat</string>
+    <string name="ai_chat_ready_message">Model is ready. Chat UI will be available here.</string>
+
+    <string name="model_download_dialog_title">Download AI model</string>
+    <string name="model_download_dialog_message">To use offline AI chat, download the on-device language model. The download may take several minutes depending on your connection.</string>
+
+    <string name="model_download_storage_title">Save location</string>
+    <string name="model_download_storage_internal_title">App internal storage</string>
+    <string name="model_download_storage_internal_desc">Private to this app. Removed when the app is uninstalled. No extra permissions required.</string>
+    <string name="model_download_storage_external_title">App external storage</string>
+    <string name="model_download_storage_external_desc">Stored in this app\'s folder on shared storage. Removed when the app is uninstalled. Good for large files.</string>
+    <string name="model_download_storage_public_title">Public Downloads folder</string>
+    <string name="model_download_storage_public_desc">Saved under Downloads and kept after uninstall. Requires “All files access” in system Settings.</string>
+
+    <string name="model_download_progress_label">Downloading model…</string>
+    <string name="model_download_paused_label">Download paused</string>
+    <string name="model_download_progress_unknown">Calculating progress…</string>
+    <string name="model_download_notification_hint">You can leave this screen; progress also appears in the notification.</string>
+
+    <string name="model_download_start">Start download</string>
+    <string name="model_download_pause">Pause</string>
+    <string name="model_download_resume">Resume</string>
+    <string name="model_download_cancel">Cancel</string>
+
+    <string name="model_download_permission_denied_notifications">Cannot start download. Notification permission is required to show download progress.</string>
+    <string name="model_download_permission_denied_storage">Cannot start download. All files access is required to save the model in Public storage.</string>
+
+    <string name="model_download_size_format">%1$s / %2$s</string>
+    <string name="model_download_percent_format">%1$d%%</string>
+    <string name="model_download_part_format">Part %1$d of %2$d</string>
+    <string name="model_download_rate_format">%1$s/s</string>
+</resources>

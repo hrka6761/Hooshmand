@@ -16,7 +16,13 @@
 
         <receiver
             android:name="ir.hrka.download.manager.api.DownloadActionReceiver"
-            android:exported="false" />
+            android:exported="false">
+            <intent-filter>
+                <action android:name="ir.hrka.download.manager.action.PAUSE" />
+                <action android:name="ir.hrka.download.manager.action.RESUME" />
+                <action android:name="ir.hrka.download.manager.action.STOP" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

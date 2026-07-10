@@ -21,12 +21,16 @@ interface DownloadListener {
      * @param downloadRate Current transfer speed in bytes per second.
      * @param remainingTime Estimated time until completion in milliseconds.
      * @param progress Completion ratio in the range `0.0`–`1.0`, or `-1` when unknown.
+     * @param currentPartIndex Zero-based index of the active part for multipart downloads.
+     * @param totalParts Total number of parts; `1` for single-file downloads.
      */
     fun onDownloading(
         receivedBytes: Long,
         downloadRate: Long,
         remainingTime: Long,
-        progress: Float
+        progress: Float,
+        currentPartIndex: Int = 0,
+        totalParts: Int = 1,
     )
 
     /**
@@ -42,6 +46,18 @@ interface DownloadListener {
      * @param errorMsg Human-readable failure reason, or `null` if not provided.
      */
     fun onDownloadFailed(errorMsg: String?)
+
+    /**
+     * Called when the download is paused by the user or [DownloadManager.pauseDownload].
+     */
+    fun onDownloadPaused(
+        receivedBytes: Long,
+        downloadRate: Long,
+        remainingTime: Long,
+        progress: Float,
+        currentPartIndex: Int = 0,
+        totalParts: Int = 1,
+    )
 
     /**
      * Called when the download is canceled by the user or [DownloadManager.stopDownload].

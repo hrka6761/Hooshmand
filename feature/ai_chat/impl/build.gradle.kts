@@ -12,4 +12,7 @@ android {
 
 dependencies {
     implementation(projects.feature.aiChat.api)
+    implementation(projects.core.downloadManager)
+    implementation(projects.core.datastore)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
 }

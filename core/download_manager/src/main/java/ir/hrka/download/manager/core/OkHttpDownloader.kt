@@ -2,6 +2,7 @@ package ir.hrka.download.manager.core
 
 import ir.hrka.download.manager.exception.NoResponseException
 import ir.hrka.download.manager.filing.FileProvider
+import ir.hrka.download.manager.internal.work.ActiveDownloadTransferRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -50,9 +51,15 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
         sourceOffset: Long = 0L,
         overallReceivedBytes: Long = 0L,
         overallTotalBytes: Long? = null,
+        downloadId: String? = null,
         shouldStop: () -> Boolean = { false },
     ) {
         val targetFile = outputFile ?: fileProvider.provide()
+        if (shouldStop()) {
+            listener.onDownloadFailed(targetFile, IOException("Download stopped"))
+            return
+        }
+
         var segmentReceivedBytes = sourceOffset
         var deltaBytes = 0L
         var lastSetProgressTs = 0L
@@ -61,9 +68,16 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
 
         val client = provideOkHttpClient()
         val request = provideRequest(sourceOffset, fileUrl, headers)
+        val call = client.newCall(request)
+        downloadId?.let { ActiveDownloadTransferRegistry.register(it, call) }
 
         try {
-            client.newCall(request).execute().use { response ->
+            call.execute().use { response ->
+                if (shouldStop()) {
+                    listener.onDownloadFailed(targetFile, IOException("Download stopped"))
+                    return
+                }
+
                 if (!response.isSuccessful) {
                     listener.onDownloadFailed(targetFile, NoResponseException())
                     return
@@ -142,8 +156,13 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
                 }
             }
         } catch (e: IOException) {
-            listener.onDownloadFailed(targetFile, e)
+            if (call.isCanceled() || shouldStop()) {
+                listener.onDownloadFailed(targetFile, IOException("Download stopped"))
+            } else {
+                listener.onDownloadFailed(targetFile, e)
+            }
         } finally {
+            downloadId?.let { ActiveDownloadTransferRegistry.unregister(it) }
             stopDownload()
         }
     }

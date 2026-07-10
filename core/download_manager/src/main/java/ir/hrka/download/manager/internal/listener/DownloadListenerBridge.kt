@@ -91,15 +91,19 @@ internal class DownloadListenerBridge(
                     downloadRate = progress.downloadRate,
                     remainingTime = progress.remainingTimeMs,
                     progress = progress.progress,
+                    currentPartIndex = progress.currentPartIndex,
+                    totalParts = progress.totalParts,
                 )
             }
 
             DownloadStatus.Paused -> {
-                listener.onDownloading(
+                listener.onDownloadPaused(
                     receivedBytes = progress.receivedBytes,
                     downloadRate = progress.downloadRate,
                     remainingTime = progress.remainingTimeMs,
                     progress = progress.progress,
+                    currentPartIndex = progress.currentPartIndex,
+                    totalParts = progress.totalParts,
                 )
             }
 

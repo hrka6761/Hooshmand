@@ -120,6 +120,7 @@ class DownloadManager private constructor(
 
         workId = request.id
         listenerBridge?.reset()
+        DownloadWorkerControl.resetForNewDownload(downloadId)
 
         workManager.enqueueUniqueWork(
             downloadId,
@@ -301,17 +302,13 @@ class DownloadManager private constructor(
         /**
          * Builds a stable id used as the WorkManager unique-work name and control key.
          */
-        private fun createDownloadId(): String = when (downloadType) {
-            DownloadType.SingleFile -> {
-                val single = singleItemDownloadData!!
-                "single_${single.fileName}_${single.url.hashCode()}"
-            }
+        private fun createDownloadId(): String =
+            when (downloadType) {
+                DownloadType.SingleFile ->
+                    DownloadIds.singleFile(singleItemDownloadData!!)
 
-            DownloadType.MultiParts -> {
-                val parts = multipartItemDownloadData!!.itemParts
-                val urlsHash = parts.joinToString(separator = "|") { it.url }.hashCode()
-                "multipart_${parts.first().fileName}_$urlsHash"
+                DownloadType.MultiParts ->
+                    DownloadIds.multipart(multipartItemDownloadData!!)
             }
-        }
     }
 }

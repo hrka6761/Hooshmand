@@ -23,6 +23,8 @@ package ir.hrka.download.manager
  *
  * @property itemParts Non-empty ordered list of parts to download and append.
  * Each entry supplies the part URL and, when known, that part's size in bytes.
+ * @property totalFileSize Combined expected size of the final file when individual part sizes
+ * are unknown but the overall total is known.
  *
  * @see SingleItemDownloadData
  * @see DownloadType.MultiParts
@@ -34,4 +36,9 @@ data class MultipartItemDownloadData(
      * Ordered parts downloaded one after another and appended into the final output file.
      */
     val itemParts: List<SingleItemDownloadData>,
+
+    /**
+     * Combined expected size of the final output file when per-part sizes are not all known.
+     */
+    val totalFileSize: Long? = null,
 )

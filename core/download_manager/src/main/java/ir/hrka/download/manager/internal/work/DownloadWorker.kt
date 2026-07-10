@@ -11,10 +11,8 @@ import ir.hrka.download.manager.core.OkHttpDownloader
 import ir.hrka.download.manager.core.OkHttpListener
 import ir.hrka.download.manager.filing.FileProviderFactory
 import ir.hrka.download.manager.internal.notification.DownloadNotificationHelper
-import kotlinx.coroutines.delay
 import java.io.File
 import java.io.IOException
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * WorkManager worker that performs background downloads as a foreground service.
@@ -210,7 +208,20 @@ internal class DownloadWorker(
                 }
 
                 val part = parts[partIndex]
-                val sourceOffset = if (partIndex == resume.partIndex) resume.partSourceOffset else 0L
+                val currentResume = resolveMultipartResumeState(outputFile.length(), parts)
+                val sourceOffset =
+                    if (partIndex == currentResume.partIndex) {
+                        currentResume.partSourceOffset
+                    } else {
+                        0L
+                    }
+                val overallReceivedBytes =
+                    resolveOverallReceivedBytes(
+                        outputFile = outputFile,
+                        parts = parts,
+                        partIndex = partIndex,
+                        sourceOffset = sourceOffset,
+                    )
 
                 lastProgress = syncProgressFromFile(
                     outputFile = outputFile,
@@ -230,7 +241,7 @@ internal class DownloadWorker(
                     expectedSegmentBytes = part.fileSize ?: 0L,
                     appendToOutput = outputFile.exists() && outputFile.length() > 0L,
                     sourceOffset = sourceOffset,
-                    overallReceivedBytes = bytesBeforePart(parts, partIndex),
+                    overallReceivedBytes = overallReceivedBytes,
                     overallTotalBytes = totalBytes,
                     allParts = parts,
                     downloadId = downloadId,
@@ -316,11 +327,17 @@ internal class DownloadWorker(
                 }
                 val partReceived = (downloadedBytes - overallReceivedBytes).coerceAtLeast(0L)
                 val partTotal = currentPartTotalBytes ?: resolvedSegmentTotal
+                val receivedBytes =
+                    if (hasUnknownPartSizes(allParts)) {
+                        outputFile.length()
+                    } else {
+                        downloadedBytes
+                    }
                 val progressUpdate = if (totalParts > 1) {
                     DownloadWorkProgress.downloadingMultiPart(
                         currentPartIndex = currentPartIndex,
                         totalParts = totalParts,
-                        receivedBytes = downloadedBytes,
+                        receivedBytes = receivedBytes,
                         totalBytes = effectiveTotal,
                         currentPartReceivedBytes = partReceived,
                         currentPartTotalBytes = partTotal,
@@ -329,7 +346,7 @@ internal class DownloadWorker(
                     )
                 } else {
                     DownloadWorkProgress.downloadingSingleFile(
-                        receivedBytes = downloadedBytes,
+                        receivedBytes = receivedBytes,
                         totalBytes = effectiveTotal,
                         downloadRate = downloadRate.toLong(),
                         remainingTimeMs = remainingTime.toLong(),
@@ -368,11 +385,12 @@ internal class DownloadWorker(
             sourceOffset = sourceOffset,
             overallReceivedBytes = overallReceivedBytes,
             overallTotalBytes = lastKnownTotalBytes ?: overallTotalBytes,
+            downloadId = downloadId,
             shouldStop = { DownloadWorkerControl.shouldStop(downloadId) },
         )
 
         if (outcomeType == SegmentOutcomeType.Stopped) {
-            val pausedProgress = syncProgressFromFile(
+            val synced = syncProgressFromFile(
                 outputFile = outputFile,
                 lastProgress = latestProgress ?: DownloadWorkProgress.pending(
                     totalBytes = lastKnownTotalBytes ?: overallTotalBytes,
@@ -383,8 +401,13 @@ internal class DownloadWorker(
                 currentPartIndex = currentPartIndex,
                 allParts = allParts,
             )
-            latestProgress = pausedProgress
-            publishProgress(notificationHelper, pausedProgress)
+            latestProgress =
+                if (DownloadWorkerControl.isPauseRequested(downloadId)) {
+                    DownloadWorkProgress.paused(synced)
+                } else {
+                    synced
+                }
+            publishProgress(notificationHelper, latestProgress)
         }
 
         return SegmentOutcome(
@@ -402,15 +425,28 @@ internal class DownloadWorker(
         lastProgress: DownloadWorkProgress,
         notificationHelper: DownloadNotificationHelper,
     ): ControlAction {
-        if (DownloadWorkerControl.isCancelRequested(downloadId)) return ControlAction.Cancel
+        while (true) {
+            if (DownloadWorkerControl.isCancelRequested(downloadId)) {
+                return ControlAction.Cancel
+            }
 
-        while (DownloadWorkerControl.isPauseRequested(downloadId)) {
-            publishProgress(notificationHelper, DownloadWorkProgress.paused(lastProgress))
-            if (DownloadWorkerControl.isCancelRequested(downloadId)) return ControlAction.Cancel
-            delay(PAUSE_POLL_INTERVAL_MS.milliseconds)
+            if (!DownloadWorkerControl.isPauseRequested(downloadId)) {
+                return ControlAction.Continue
+            }
+
+            while (DownloadWorkerControl.isPauseRequested(downloadId)) {
+                publishProgress(notificationHelper, DownloadWorkProgress.paused(lastProgress))
+                if (DownloadWorkerControl.isCancelRequested(downloadId)) {
+                    return ControlAction.Cancel
+                }
+                DownloadWorkerControl.awaitControlSignal(downloadId, PAUSE_POLL_INTERVAL_MS)
+            }
+
+            if (DownloadWorkerControl.isCancelRequested(downloadId)) {
+                return ControlAction.Cancel
+            }
+            // Pause was cleared; loop again in case pause/stop was requested before continuing.
         }
-
-        return ControlAction.Continue
     }
 
     /** Publishes progress to WorkManager observers and refreshes the foreground notification. */
@@ -490,6 +526,26 @@ internal class DownloadWorker(
         parts.take(partIndex).sumOf { it.fileSize ?: 0L }
 
     /**
+     * Resolves cumulative received bytes before the active segment starts.
+     *
+     * When part sizes are unknown, derives the value from bytes already on disk.
+     */
+    private fun resolveOverallReceivedBytes(
+        outputFile: File,
+        parts: List<SingleItemDownloadData>,
+        partIndex: Int,
+        sourceOffset: Long,
+    ): Long {
+        if (parts.none { it.fileSize == null }) {
+            return bytesBeforePart(parts, partIndex)
+        }
+        return (outputFile.length() - sourceOffset).coerceAtLeast(0L)
+    }
+
+    private fun hasUnknownPartSizes(parts: List<SingleItemDownloadData>): Boolean =
+        parts.any { it.fileSize == null }
+
+    /**
      * Rebuilds progress from the bytes already persisted on disk before resuming a segment.
      */
     private suspend fun syncProgressFromFile(
@@ -502,8 +558,17 @@ internal class DownloadWorker(
     ): DownloadWorkProgress {
         val receivedBytes = outputFile.length()
         val effectiveTotal = totalBytes ?: lastProgress.totalBytes
-        val currentPartReceivedBytes = (receivedBytes - bytesBeforePart(allParts, currentPartIndex))
-            .coerceAtLeast(0L)
+        val resumeState = resolveMultipartResumeState(receivedBytes, allParts)
+        val currentPartReceivedBytes =
+            if (hasUnknownPartSizes(allParts)) {
+                if (currentPartIndex == resumeState.partIndex) {
+                    resumeState.partSourceOffset
+                } else {
+                    0L
+                }
+            } else {
+                (receivedBytes - bytesBeforePart(allParts, currentPartIndex)).coerceAtLeast(0L)
+            }
         val currentPartTotalBytes = allParts.getOrNull(currentPartIndex)?.fileSize
             ?: lastProgress.currentPartTotalBytes
 
@@ -601,6 +666,6 @@ internal class DownloadWorker(
 
     companion object {
         /** Poll interval while waiting for resume after pause. */
-        private const val PAUSE_POLL_INTERVAL_MS = 300L
+        private const val PAUSE_POLL_INTERVAL_MS = 100L
     }
 }

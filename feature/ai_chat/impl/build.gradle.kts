@@ -16,4 +16,5 @@ dependencies {
     implementation(projects.core.datastore)
     implementation(projects.core.llmRuntime)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.mikepenz.markdown.renderer.m3)
 }

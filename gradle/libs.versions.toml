@@ -26,6 +26,7 @@ datastore = "1.2.0"
 lottie = "6.7.1"
 litertlm = "0.11.0"
 playServicesTflite = "16.4.0"
+markdownRenderer = "0.41.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -76,6 +77,9 @@ lottie-compose = { group = "com.airbnb.android", name = "lottie-compose", versio
 
 # On-device LLM inference (LiteRT-LM)
 litertlm = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version.ref = "litertlm" }
+
+# Compose Markdown (Material 3) — chat model replies
+mikepenz-markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "markdownRenderer" }
 play-services-tflite-java = { group = "com.google.android.gms", name = "play-services-tflite-java", version.ref = "playServicesTflite" }
 play-services-tflite-gpu = { group = "com.google.android.gms", name = "play-services-tflite-gpu", version.ref = "playServicesTflite" }
 play-services-tflite-support = { group = "com.google.android.gms", name = "play-services-tflite-support", version.ref = "playServicesTflite" }

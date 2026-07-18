@@ -200,11 +200,23 @@ private fun AiChatMessageBubble(message: AiChatMessage) {
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = message.text.ifBlank { " " },
-                style = MaterialTheme.typography.bodyMedium,
-                color = contentColor,
-            )
+            when (message.role) {
+                AiChatMessageRole.Model -> {
+                    AiChatMarkdownText(
+                        markdown = message.text,
+                        color = contentColor,
+                    )
+                }
+                AiChatMessageRole.User,
+                AiChatMessageRole.Error,
+                -> {
+                    Text(
+                        text = message.text.ifBlank { " " },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = contentColor,
+                    )
+                }
+            }
             if (message.isStreaming) {
                 Text(
                     text = stringResource(R.string.ai_chat_streaming_indicator),

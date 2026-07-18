@@ -20,11 +20,11 @@ import ir.hrka.llm.runtime.api.LlmRuntimeConfig
  * @property systemInstruction Optional system prompt that guides model behavior.
  */
 data class AiChatModelSettings(
-    val accelerator: LlmAccelerator = LlmAccelerator.GPU,
-    val maxTokens: Int = LlmRuntimeConfig.DEFAULT_MAX_TOKENS,
-    val topK: Int = LlmRuntimeConfig.DEFAULT_TOP_K,
-    val topP: Float = LlmRuntimeConfig.DEFAULT_TOP_P,
-    val temperature: Float = LlmRuntimeConfig.DEFAULT_TEMPERATURE,
+    val accelerator: LlmAccelerator = LlmAccelerator.CPU,
+    val maxTokens: Int = 1024,
+    val topK: Int = 64,
+    val topP: Float = 0.95f,
+    val temperature: Float = 1.0f,
     val systemInstruction: String? = null,
 ) {
 

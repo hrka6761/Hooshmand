@@ -203,7 +203,7 @@ internal fun AiChatScreenContent(
 /**
  * Preview of the model-status check spinner.
  */
-@Preview(showBackground = true, name = "Checking model")
+@Preview(showBackground = true, name = "Checking model", apiLevel = 34)
 @Composable
 private fun AiChatScreenCheckingModelPreview() {
     MaterialTheme {
@@ -221,7 +221,7 @@ private fun AiChatScreenCheckingModelPreview() {
 /**
  * Preview of the ready chat panel with empty conversation.
  */
-@Preview(showBackground = true, name = "Model ready – empty chat")
+@Preview(showBackground = true, name = "Model ready – empty chat", apiLevel = 34)
 @Composable
 private fun AiChatScreenModelReadyPreview() {
     MaterialTheme {
@@ -244,7 +244,7 @@ private fun AiChatScreenModelReadyPreview() {
 /**
  * Preview of the ready chat panel with sample messages.
  */
-@Preview(showBackground = true, name = "Model ready – with messages")
+@Preview(showBackground = true, name = "Model ready – with messages", apiLevel = 34)
 @Composable
 private fun AiChatScreenWithMessagesPreview() {
     MaterialTheme {
@@ -280,7 +280,7 @@ private fun AiChatScreenWithMessagesPreview() {
 /**
  * Preview of the download dialog with internal storage selected.
  */
-@Preview(showBackground = true, name = "Download dialog")
+@Preview(showBackground = true, name = "Download dialog", apiLevel = 34)
 @Composable
 private fun AiChatScreenDownloadDialogPreview() {
     MaterialTheme {
@@ -303,7 +303,7 @@ private fun AiChatScreenDownloadDialogPreview() {
 /**
  * Preview of the download dialog with external storage selected.
  */
-@Preview(showBackground = true, name = "Download dialog – external storage")
+@Preview(showBackground = true, name = "Download dialog – external storage", apiLevel = 34)
 @Composable
 private fun AiChatScreenDownloadDialogExternalStoragePreview() {
     MaterialTheme {
@@ -326,7 +326,7 @@ private fun AiChatScreenDownloadDialogExternalStoragePreview() {
 /**
  * Preview of the download dialog while a multipart download is in progress.
  */
-@Preview(showBackground = true, name = "Download dialog – downloading")
+@Preview(showBackground = true, name = "Download dialog – downloading", apiLevel = 34)
 @Composable
 private fun AiChatScreenDownloadDialogDownloadingPreview() {
     MaterialTheme {
@@ -359,7 +359,7 @@ private fun AiChatScreenDownloadDialogDownloadingPreview() {
 /**
  * Preview of the download dialog showing an error message.
  */
-@Preview(showBackground = true, name = "Download dialog – error")
+@Preview(showBackground = true, name = "Download dialog – error", apiLevel = 34)
 @Composable
 private fun AiChatScreenDownloadDialogErrorPreview() {
     MaterialTheme {
@@ -382,7 +382,7 @@ private fun AiChatScreenDownloadDialogErrorPreview() {
 /**
  * Preview of the fallback loading state when neither ready nor download dialog.
  */
-@Preview(showBackground = true, name = "Fallback loading")
+@Preview(showBackground = true, name = "Fallback loading", apiLevel = 34)
 @Composable
 private fun AiChatScreenFallbackLoadingPreview() {
     MaterialTheme {

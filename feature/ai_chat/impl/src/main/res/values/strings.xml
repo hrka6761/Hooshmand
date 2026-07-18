@@ -49,4 +49,11 @@
     <string name="ai_chat_settings_accelerator_gpu">GPU</string>
     <string name="ai_chat_settings_accelerator_npu">NPU</string>
     <string name="ai_chat_settings_accelerator_tpu">TPU</string>
+
+    <string name="ai_chat_input_placeholder">Type a message…</string>
+    <string name="ai_chat_send">Send</string>
+    <string name="ai_chat_stop">Stop</string>
+    <string name="ai_chat_empty_hint">Ask the on-device model a question.</string>
+    <string name="ai_chat_model_initializing">Loading model…</string>
+    <string name="ai_chat_streaming_indicator">Generating…</string>
 </resources>

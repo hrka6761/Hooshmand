@@ -31,11 +31,9 @@ import ir.hrka.hooshmand.ai_chat.impl.ui.ModelDownloadDialog
  * AI chat feature entry screen.
  *
  * Shows the model download gate until a valid model file is ready, then the chat panel.
- * Chat/runtime ViewModel actions are wired in a later step; chat callbacks are no-ops for now.
- *
  * @param modifier Optional [Modifier] for the root layout.
  * @param onNavigateHome Called when the user leaves before a download starts.
- * @param viewModel Screen ViewModel that owns download and (later) chat state.
+ * @param viewModel Screen ViewModel that owns download and chat/runtime state.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,12 +60,12 @@ fun AiChatScreen(
                 onNavigateHome()
             }
         },
-        onInputTextChanged = {},
-        onSendMessage = {},
-        onStopGeneration = {},
-        onOpenSettings = {},
-        onDismissSettings = {},
-        onConfirmSettings = {},
+        onInputTextChanged = viewModel::onInputTextChanged,
+        onSendMessage = viewModel::sendMessage,
+        onStopGeneration = viewModel::stopGeneration,
+        onOpenSettings = viewModel::openSettings,
+        onDismissSettings = viewModel::dismissSettings,
+        onConfirmSettings = viewModel::confirmSettings,
     )
 }
 

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -86,9 +85,7 @@ internal fun AiChatPanel(
 
     Column(
         modifier =
-            modifier
-                .fillMaxSize()
-                .imePadding(),
+            modifier.fillMaxSize()
     ) {
         Box(
             modifier =
@@ -190,9 +187,19 @@ private fun AiChatMessageBubble(message: AiChatMessage) {
         }
     val shape =
         if (isUser) {
-            RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+            RoundedCornerShape(
+                topStart = 16.dp,
+                topEnd = 4.dp,
+                bottomStart = 16.dp,
+                bottomEnd = 16.dp
+            )
         } else {
-            RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+            RoundedCornerShape(
+                topStart = 4.dp,
+                topEnd = 16.dp,
+                bottomStart = 16.dp,
+                bottomEnd = 16.dp
+            )
         }
 
     Box(
@@ -217,9 +224,10 @@ private fun AiChatMessageBubble(message: AiChatMessage) {
                             color = contentColor,
                         )
                     }
+
                     AiChatMessageRole.User,
                     AiChatMessageRole.Error,
-                    -> {
+                        -> {
                         Text(
                             text = message.text.ifBlank { " " },
                             style =
@@ -393,7 +401,11 @@ private fun AiChatPanelConversationPreview() {
             messages =
                 listOf(
                     AiChatMessage("1", AiChatMessageRole.User, "Hello!"),
-                    AiChatMessage("2", AiChatMessageRole.Model, "Hi there! How can I help you today?"),
+                    AiChatMessage(
+                        "2",
+                        AiChatMessageRole.Model,
+                        "Hi there! How can I help you today?"
+                    ),
                     AiChatMessage("3", AiChatMessageRole.User, "Tell me about on-device AI."),
                 ),
             inputText = "What are the benefits?",

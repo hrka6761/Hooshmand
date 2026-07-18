@@ -334,6 +334,42 @@ class AiChatViewModel @Inject constructor(
     }
 
     /**
+     * Clears the on-screen chat history and resets the runtime conversation session.
+     *
+     * Keeps the loaded model in memory. Uses the current system instruction from
+     * [AiChatUiState.modelSettings].
+     */
+    fun clearConversation() {
+        if (!_uiState.value.isModelReady) return
+        if (_uiState.value.isModelInitializing) return
+
+        stopGeneration()
+        _uiState.update {
+            it.copy(
+                messages = emptyList(),
+                inputText = "",
+                runtimeErrorMessage = null,
+            )
+        }
+
+        val runtime = llmRuntime ?: return
+        viewModelScope.launch {
+            runCatching {
+                runtime.resetConversation(
+                    systemInstruction = _uiState.value.modelSettings.systemInstruction,
+                )
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        runtimeErrorMessage = error.message
+                            ?: "Failed to reset conversation.",
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * Opens the model settings dialog.
      */
     fun openSettings() {

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -66,6 +67,7 @@ fun AiChatScreen(
         onOpenSettings = viewModel::openSettings,
         onDismissSettings = viewModel::dismissSettings,
         onConfirmSettings = viewModel::confirmSettings,
+        onClearConversation = viewModel::clearConversation,
     )
 }
 
@@ -86,6 +88,7 @@ fun AiChatScreen(
  * @param onOpenSettings Called when the settings action in the top bar is tapped.
  * @param onDismissSettings Called when the settings dialog is dismissed.
  * @param onConfirmSettings Called when the user confirms new [AiChatModelSettings].
+ * @param onClearConversation Called when the user clears the chat history.
  * @param modifier Optional [Modifier] for the root layout.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,6 +108,7 @@ internal fun AiChatScreenContent(
     onOpenSettings: () -> Unit = {},
     onDismissSettings: () -> Unit = {},
     onConfirmSettings: (AiChatModelSettings) -> Unit = {},
+    onClearConversation: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -119,6 +123,17 @@ internal fun AiChatScreenContent(
                 },
                 actions = {
                     if (uiState.isModelReady) {
+                        IconButton(
+                            onClick = onClearConversation,
+                            enabled = uiState.messages.isNotEmpty() &&
+                                !uiState.isModelInitializing,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteSweep,
+                                contentDescription =
+                                    stringResource(R.string.ai_chat_clear_conversation_cd),
+                            )
+                        }
                         IconButton(onClick = onOpenSettings) {
                             Icon(
                                 imageVector = Icons.Rounded.Settings,

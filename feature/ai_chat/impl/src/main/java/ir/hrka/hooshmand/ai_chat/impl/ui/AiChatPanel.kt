@@ -37,6 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import ir.hrka.hooshmand.ai_chat.impl.AiChatMessage
 import ir.hrka.hooshmand.ai_chat.impl.AiChatMessageRole
@@ -200,21 +202,33 @@ private fun AiChatMessageBubble(message: AiChatMessage) {
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            when (message.role) {
-                AiChatMessageRole.Model -> {
-                    AiChatMarkdownText(
-                        markdown = message.text,
-                        color = contentColor,
-                    )
-                }
-                AiChatMessageRole.User,
-                AiChatMessageRole.Error,
-                -> {
-                    Text(
-                        text = message.text.ifBlank { " " },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = contentColor,
-                    )
+            AiChatDirectionalContent(text = message.text) {
+                val isRtl = resolvesToRtl(message.text)
+                when (message.role) {
+                    AiChatMessageRole.Model -> {
+                        AiChatMarkdownText(
+                            markdown = message.text,
+                            color = contentColor,
+                        )
+                    }
+                    AiChatMessageRole.User,
+                    AiChatMessageRole.Error,
+                    -> {
+                        Text(
+                            text = message.text.ifBlank { " " },
+                            style =
+                                MaterialTheme.typography.bodyMedium.copy(
+                                    textDirection =
+                                        if (isRtl) {
+                                            TextDirection.Rtl
+                                        } else {
+                                            TextDirection.Ltr
+                                        },
+                                ),
+                            color = contentColor,
+                            textAlign = if (isRtl) TextAlign.Right else TextAlign.Left,
+                        )
+                    }
                 }
             }
             if (message.isStreaming) {

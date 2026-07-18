@@ -2,6 +2,7 @@
 <resources>
     <string name="ai_chat_title">AI Chat</string>
     <string name="ai_chat_ready_message">Model is ready. Chat UI will be available here.</string>
+    <string name="ai_chat_settings_cd">Model settings</string>
 
     <string name="model_download_dialog_title">Download AI model</string>
     <string name="model_download_dialog_message">To use offline AI chat, download the on-device language model. The download may take several minutes depending on your connection.</string>

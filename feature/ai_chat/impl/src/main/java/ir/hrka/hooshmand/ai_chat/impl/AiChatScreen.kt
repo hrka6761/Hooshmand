@@ -3,9 +3,13 @@ package ir.hrka.hooshmand.ai_chat.impl
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -16,13 +20,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import ir.hrka.download.manager.DownloadStorageLocation
+import ir.hrka.hooshmand.ai_chat.impl.ui.AiChatPanel
+import ir.hrka.hooshmand.ai_chat.impl.ui.AiChatSettingsDialog
 import ir.hrka.hooshmand.ai_chat.impl.ui.ModelDownloadDialog
 
+/**
+ * AI chat feature entry screen.
+ *
+ * Shows the model download gate until a valid model file is ready, then the chat panel.
+ * Chat/runtime ViewModel actions are wired in a later step; chat callbacks are no-ops for now.
+ *
+ * @param modifier Optional [Modifier] for the root layout.
+ * @param onNavigateHome Called when the user leaves before a download starts.
+ * @param viewModel Screen ViewModel that owns download and (later) chat state.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiChatScreen(
@@ -42,14 +56,40 @@ fun AiChatScreen(
         onPermissionDenied = viewModel::onDownloadPermissionDenied,
         onClearError = viewModel::clearError,
         onCancel = {
-            if (uiState.isDownloading)
+            if (uiState.isDownloading) {
                 viewModel.cancelModelDownload()
-            else
+            } else {
                 onNavigateHome()
+            }
         },
+        onInputTextChanged = {},
+        onSendMessage = {},
+        onStopGeneration = {},
+        onOpenSettings = {},
+        onDismissSettings = {},
+        onConfirmSettings = {},
     )
 }
 
+/**
+ * Stateless AI chat screen content used by [AiChatScreen] and Compose previews.
+ *
+ * @param uiState Full screen state (download gate + chat).
+ * @param onStorageLocationSelected Called when the download storage option changes.
+ * @param onStartDownload Called to begin or resume a model download from the dialog.
+ * @param onPauseDownload Called to pause an active download.
+ * @param onResumeDownload Called to resume a paused download.
+ * @param onCancel Called to cancel download or leave the screen.
+ * @param onPermissionDenied Called when a required download permission is denied.
+ * @param onClearError Called to clear a download error message.
+ * @param onInputTextChanged Called when the chat input text changes.
+ * @param onSendMessage Called when the user taps Send.
+ * @param onStopGeneration Called when the user taps Stop during generation.
+ * @param onOpenSettings Called when the settings action in the top bar is tapped.
+ * @param onDismissSettings Called when the settings dialog is dismissed.
+ * @param onConfirmSettings Called when the user confirms new [AiChatModelSettings].
+ * @param modifier Optional [Modifier] for the root layout.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AiChatScreenContent(
@@ -61,6 +101,12 @@ internal fun AiChatScreenContent(
     onCancel: () -> Unit,
     onPermissionDenied: (String) -> Unit = {},
     onClearError: () -> Unit = {},
+    onInputTextChanged: (String) -> Unit = {},
+    onSendMessage: () -> Unit = {},
+    onStopGeneration: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onDismissSettings: () -> Unit = {},
+    onConfirmSettings: (AiChatModelSettings) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -72,6 +118,16 @@ internal fun AiChatScreenContent(
                         text = stringResource(R.string.ai_chat_title),
                         fontWeight = FontWeight.Bold,
                     )
+                },
+                actions = {
+                    if (uiState.isModelReady) {
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(
+                                imageVector = Icons.Rounded.Settings,
+                                contentDescription = stringResource(R.string.ai_chat_settings_cd),
+                            )
+                        }
+                    }
                 },
             )
         },
@@ -87,14 +143,21 @@ internal fun AiChatScreenContent(
                 uiState.isCheckingModel -> {
                     CircularProgressIndicator()
                 }
+
                 uiState.isModelReady -> {
-                    Text(
-                        text = stringResource(R.string.ai_chat_ready_message),
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 24.dp),
+                    AiChatPanel(
+                        messages = uiState.messages,
+                        inputText = uiState.inputText,
+                        isGenerating = uiState.isGenerating,
+                        isModelInitializing = uiState.isModelInitializing,
+                        runtimeErrorMessage = uiState.runtimeErrorMessage,
+                        onInputTextChanged = onInputTextChanged,
+                        onSendMessage = onSendMessage,
+                        onStopGeneration = onStopGeneration,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
+
                 uiState.showDownloadDialog -> {
                     ModelDownloadDialog(
                         uiState = uiState,
@@ -107,15 +170,26 @@ internal fun AiChatScreenContent(
                         onClearError = onClearError,
                     )
                 }
+
                 else -> {
                     CircularProgressIndicator()
                 }
             }
         }
     }
+
+    if (uiState.isModelReady && uiState.showSettingsDialog) {
+        AiChatSettingsDialog(
+            settings = uiState.modelSettings,
+            onDismissed = onDismissSettings,
+            onConfirm = onConfirmSettings,
+        )
+    }
 }
 
-
+/**
+ * Preview of the model-status check spinner.
+ */
 @Preview(showBackground = true, name = "Checking model")
 @Composable
 private fun AiChatScreenCheckingModelPreview() {
@@ -131,7 +205,10 @@ private fun AiChatScreenCheckingModelPreview() {
     }
 }
 
-@Preview(showBackground = true, name = "Model ready")
+/**
+ * Preview of the ready chat panel with empty conversation.
+ */
+@Preview(showBackground = true, name = "Model ready – empty chat")
 @Composable
 private fun AiChatScreenModelReadyPreview() {
     MaterialTheme {
@@ -151,6 +228,45 @@ private fun AiChatScreenModelReadyPreview() {
     }
 }
 
+/**
+ * Preview of the ready chat panel with sample messages.
+ */
+@Preview(showBackground = true, name = "Model ready – with messages")
+@Composable
+private fun AiChatScreenWithMessagesPreview() {
+    MaterialTheme {
+        AiChatScreenContent(
+            uiState =
+                AiChatUiState(
+                    isCheckingModel = false,
+                    isModelReady = true,
+                    showDownloadDialog = false,
+                    messages =
+                        listOf(
+                            AiChatMessage(
+                                id = "1",
+                                role = AiChatMessageRole.User,
+                                text = "Hello",
+                            ),
+                            AiChatMessage(
+                                id = "2",
+                                role = AiChatMessageRole.Model,
+                                text = "Hi! How can I help?",
+                            ),
+                        ),
+                ),
+            onStorageLocationSelected = {},
+            onStartDownload = {},
+            onPauseDownload = {},
+            onResumeDownload = {},
+            onCancel = {},
+        )
+    }
+}
+
+/**
+ * Preview of the download dialog with internal storage selected.
+ */
 @Preview(showBackground = true, name = "Download dialog")
 @Composable
 private fun AiChatScreenDownloadDialogPreview() {
@@ -171,6 +287,9 @@ private fun AiChatScreenDownloadDialogPreview() {
     }
 }
 
+/**
+ * Preview of the download dialog with external storage selected.
+ */
 @Preview(showBackground = true, name = "Download dialog – external storage")
 @Composable
 private fun AiChatScreenDownloadDialogExternalStoragePreview() {
@@ -191,6 +310,9 @@ private fun AiChatScreenDownloadDialogExternalStoragePreview() {
     }
 }
 
+/**
+ * Preview of the download dialog while a multipart download is in progress.
+ */
 @Preview(showBackground = true, name = "Download dialog – downloading")
 @Composable
 private fun AiChatScreenDownloadDialogDownloadingPreview() {
@@ -221,6 +343,9 @@ private fun AiChatScreenDownloadDialogDownloadingPreview() {
     }
 }
 
+/**
+ * Preview of the download dialog showing an error message.
+ */
 @Preview(showBackground = true, name = "Download dialog – error")
 @Composable
 private fun AiChatScreenDownloadDialogErrorPreview() {
@@ -241,6 +366,9 @@ private fun AiChatScreenDownloadDialogErrorPreview() {
     }
 }
 
+/**
+ * Preview of the fallback loading state when neither ready nor download dialog.
+ */
 @Preview(showBackground = true, name = "Fallback loading")
 @Composable
 private fun AiChatScreenFallbackLoadingPreview() {

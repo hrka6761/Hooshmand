@@ -32,9 +32,12 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -58,6 +61,7 @@ import ir.hrka.hooshmand.ai_chat.impl.R
  * @param onSendMessage Called when the user taps Send with non-blank text.
  * @param onStopGeneration Called when the user taps Stop during generation.
  * @param modifier Optional [Modifier] for the root layout.
+ * @param focusRequester Optional [FocusRequester] for programmatic focus control of the input field.
  */
 @Composable
 internal fun AiChatPanel(
@@ -70,6 +74,7 @@ internal fun AiChatPanel(
     onSendMessage: () -> Unit,
     onStopGeneration: () -> Unit,
     modifier: Modifier = Modifier,
+    focusRequester: FocusRequester = remember { FocusRequester() },
 ) {
     val listState = rememberLazyListState()
 
@@ -156,6 +161,7 @@ internal fun AiChatPanel(
             onInputTextChanged = onInputTextChanged,
             onSendMessage = onSendMessage,
             onStopGeneration = onStopGeneration,
+            focusRequester = focusRequester,
         )
     }
 }
@@ -251,6 +257,7 @@ private fun AiChatMessageBubble(message: AiChatMessage) {
  * @param onInputTextChanged Called on text edits.
  * @param onSendMessage Called when Send is tapped.
  * @param onStopGeneration Called when Stop is tapped.
+ * @param focusRequester Passed to the [TextField] to manage focus.
  */
 @Composable
 private fun AiChatMessageInput(
@@ -260,6 +267,7 @@ private fun AiChatMessageInput(
     onInputTextChanged: (String) -> Unit,
     onSendMessage: () -> Unit,
     onStopGeneration: () -> Unit,
+    focusRequester: FocusRequester,
 ) {
     val canSend = enabled && !isGenerating && inputText.isNotBlank()
 
@@ -278,6 +286,7 @@ private fun AiChatMessageInput(
                 Modifier
                     .weight(1f)
                     .heightIn(min = 48.dp)
+                    .focusRequester(focusRequester)
                     .border(
                         width = 1.dp,
                         color = MaterialTheme.colorScheme.outlineVariant,
@@ -339,5 +348,139 @@ private fun AiChatMessageInput(
                 )
             }
         }
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, name = "Initializing")
+@Composable
+private fun AiChatPanelInitializingPreview() {
+    MaterialTheme {
+        AiChatPanel(
+            messages = emptyList(),
+            inputText = "",
+            isGenerating = false,
+            isModelInitializing = true,
+            runtimeErrorMessage = null,
+            onInputTextChanged = {},
+            onSendMessage = {},
+            onStopGeneration = {},
+        )
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, name = "Empty Hint")
+@Composable
+private fun AiChatPanelEmptyPreview() {
+    MaterialTheme {
+        AiChatPanel(
+            messages = emptyList(),
+            inputText = "",
+            isGenerating = false,
+            isModelInitializing = false,
+            runtimeErrorMessage = null,
+            onInputTextChanged = {},
+            onSendMessage = {},
+            onStopGeneration = {},
+        )
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, name = "Conversation")
+@Composable
+private fun AiChatPanelConversationPreview() {
+    MaterialTheme {
+        AiChatPanel(
+            messages =
+                listOf(
+                    AiChatMessage("1", AiChatMessageRole.User, "Hello!"),
+                    AiChatMessage("2", AiChatMessageRole.Model, "Hi there! How can I help you today?"),
+                    AiChatMessage("3", AiChatMessageRole.User, "Tell me about on-device AI."),
+                ),
+            inputText = "What are the benefits?",
+            isGenerating = false,
+            isModelInitializing = false,
+            runtimeErrorMessage = null,
+            onInputTextChanged = {},
+            onSendMessage = {},
+            onStopGeneration = {},
+        )
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, name = "Generating")
+@Composable
+private fun AiChatPanelGeneratingPreview() {
+    MaterialTheme {
+        AiChatPanel(
+            messages =
+                listOf(
+                    AiChatMessage("1", AiChatMessageRole.User, "Write a poem."),
+                    AiChatMessage(
+                        "2",
+                        AiChatMessageRole.Model,
+                        "In silicon dreams, where logic flows,\nA spark of thought in circuits grows...",
+                        isStreaming = true,
+                    ),
+                ),
+            inputText = "",
+            isGenerating = true,
+            isModelInitializing = false,
+            runtimeErrorMessage = null,
+            onInputTextChanged = {},
+            onSendMessage = {},
+            onStopGeneration = {},
+        )
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, name = "Runtime Error")
+@Composable
+private fun AiChatPanelErrorPreview() {
+    MaterialTheme {
+        AiChatPanel(
+            messages =
+                listOf(
+                    AiChatMessage("1", AiChatMessageRole.User, "Try again."),
+                ),
+            inputText = "Try again.",
+            isGenerating = false,
+            isModelInitializing = false,
+            runtimeErrorMessage = "Failed to connect to the AI runtime. Please check your settings.",
+            onInputTextChanged = {},
+            onSendMessage = {},
+            onStopGeneration = {},
+        )
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(
+    showBackground = true,
+    name = "Keyboard Focused",
+    heightDp = 400, // Reduced height to simulate keyboard space
+)
+@Composable
+private fun AiChatPanelKeyboardFocusedPreview() {
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    MaterialTheme {
+        AiChatPanel(
+            messages =
+                listOf(
+                    AiChatMessage("1", AiChatMessageRole.User, "Hello!"),
+                    AiChatMessage("2", AiChatMessageRole.Model, "How can I help?"),
+                ),
+            inputText = "I have a question about...",
+            isGenerating = false,
+            isModelInitializing = false,
+            runtimeErrorMessage = null,
+            onInputTextChanged = {},
+            onSendMessage = {},
+            onStopGeneration = {},
+            focusRequester = focusRequester,
+        )
     }
 }

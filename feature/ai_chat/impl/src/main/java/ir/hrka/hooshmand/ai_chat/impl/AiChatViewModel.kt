@@ -65,6 +65,8 @@ class AiChatViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            val storedSettings = preferencesRepository.getModelSettings()
+            _uiState.update { it.copy(modelSettings = storedSettings) }
             refreshModelStatus()
         }
     }
@@ -347,7 +349,7 @@ class AiChatViewModel @Inject constructor(
     }
 
     /**
-     * Applies new model settings, closes the dialog, and re-initializes the runtime.
+     * Applies new model settings, persists them, closes the dialog, and re-initializes the runtime.
      *
      * @param settings Confirmed settings from the dialog.
      */
@@ -360,7 +362,10 @@ class AiChatViewModel @Inject constructor(
                 runtimeErrorMessage = null,
             )
         }
-        initializeRuntime()
+        viewModelScope.launch {
+            preferencesRepository.saveModelSettings(settings)
+            initializeRuntime()
+        }
     }
 
     /**

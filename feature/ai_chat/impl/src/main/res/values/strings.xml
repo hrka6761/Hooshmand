@@ -31,4 +31,22 @@
     <string name="model_download_percent_format">%1$d%%</string>
     <string name="model_download_part_format">Part %1$d of %2$d</string>
     <string name="model_download_rate_format">%1$s/s</string>
+
+    <string name="ai_chat_settings_title">Model configs</string>
+    <string name="ai_chat_settings_tab_model">Model configs</string>
+    <string name="ai_chat_settings_tab_system_prompt">System prompt</string>
+    <string name="ai_chat_settings_accelerator">Accelerator</string>
+    <string name="ai_chat_settings_max_tokens">Maximum context length</string>
+    <string name="ai_chat_settings_topk">TopK</string>
+    <string name="ai_chat_settings_topp">TopP</string>
+    <string name="ai_chat_settings_temperature">Temperature</string>
+    <string name="ai_chat_settings_system_prompt_placeholder">Optional system instruction for the model…</string>
+    <string name="ai_chat_settings_range_format">%1$s (%2$s–%3$s)</string>
+    <string name="ai_chat_settings_ok">OK</string>
+    <string name="ai_chat_settings_cancel">Cancel</string>
+    <string name="ai_chat_settings_restore_default">Restore default</string>
+    <string name="ai_chat_settings_accelerator_cpu">CPU</string>
+    <string name="ai_chat_settings_accelerator_gpu">GPU</string>
+    <string name="ai_chat_settings_accelerator_npu">NPU</string>
+    <string name="ai_chat_settings_accelerator_tpu">TPU</string>
 </resources>

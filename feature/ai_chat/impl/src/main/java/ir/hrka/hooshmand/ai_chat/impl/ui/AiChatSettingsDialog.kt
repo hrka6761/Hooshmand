@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,9 +20,14 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -62,6 +68,7 @@ import ir.hrka.llm.runtime.api.LlmAccelerator
  * Dialog for editing [AiChatModelSettings], matching the Gallery model-config dialog layout.
  *
  * Tab 0 edits accelerator and sampling knobs. Tab 1 edits the system instruction.
+ * Each setting row includes an info icon with a short explanation of its effect on the model.
  *
  * @param settings Current settings shown when the dialog opens.
  * @param onDismissed Called when the user cancels or dismisses the dialog.
@@ -143,6 +150,8 @@ internal fun AiChatSettingsDialog(
                         )
                         NumberSliderRow(
                             label = stringResource(R.string.ai_chat_settings_max_tokens),
+                            infoTitle = stringResource(R.string.ai_chat_settings_max_tokens),
+                            infoMessage = stringResource(R.string.ai_chat_settings_info_max_tokens),
                             value = maxTokens,
                             valueRange = MAX_TOKENS_MIN..MAX_TOKENS_MAX,
                             isInteger = true,
@@ -150,6 +159,8 @@ internal fun AiChatSettingsDialog(
                         )
                         NumberSliderRow(
                             label = stringResource(R.string.ai_chat_settings_topk),
+                            infoTitle = stringResource(R.string.ai_chat_settings_topk),
+                            infoMessage = stringResource(R.string.ai_chat_settings_info_topk),
                             value = topK,
                             valueRange = TOP_K_MIN..TOP_K_MAX,
                             isInteger = true,
@@ -157,6 +168,8 @@ internal fun AiChatSettingsDialog(
                         )
                         NumberSliderRow(
                             label = stringResource(R.string.ai_chat_settings_topp),
+                            infoTitle = stringResource(R.string.ai_chat_settings_topp),
+                            infoMessage = stringResource(R.string.ai_chat_settings_info_topp),
                             value = topP,
                             valueRange = TOP_P_MIN..TOP_P_MAX,
                             isInteger = false,
@@ -164,6 +177,8 @@ internal fun AiChatSettingsDialog(
                         )
                         NumberSliderRow(
                             label = stringResource(R.string.ai_chat_settings_temperature),
+                            infoTitle = stringResource(R.string.ai_chat_settings_temperature),
+                            infoMessage = stringResource(R.string.ai_chat_settings_info_temperature),
                             value = temperature,
                             valueRange = TEMPERATURE_MIN..TEMPERATURE_MAX,
                             isInteger = false,
@@ -171,6 +186,12 @@ internal fun AiChatSettingsDialog(
                         )
                     }
                 } else {
+                    SettingLabelWithInfo(
+                        label = stringResource(R.string.ai_chat_settings_system_prompt_label),
+                        infoTitle = stringResource(R.string.ai_chat_settings_system_prompt_label),
+                        infoMessage = stringResource(R.string.ai_chat_settings_info_system_prompt),
+                    )
+
                     OutlinedTextField(
                         value = systemInstruction,
                         onValueChange = { systemInstruction = it },
@@ -250,9 +271,10 @@ private fun AcceleratorSelectorRow(
                 .semantics(mergeDescendants = true) {},
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = stringResource(R.string.ai_chat_settings_accelerator),
-            style = MaterialTheme.typography.titleSmall,
+        SettingLabelWithInfo(
+            label = stringResource(R.string.ai_chat_settings_accelerator),
+            infoTitle = stringResource(R.string.ai_chat_settings_accelerator),
+            infoMessage = stringResource(R.string.ai_chat_settings_info_accelerator),
         )
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             options.forEachIndexed { index, option ->
@@ -286,6 +308,8 @@ private fun AcceleratorSelectorRow(
  * Slider plus compact numeric field for one model setting, matching Gallery's number rows.
  *
  * @param label Setting name shown above the controls.
+ * @param infoTitle Title shown in the info dialog for this setting.
+ * @param infoMessage Explanation shown in the info dialog.
  * @param value Current numeric value.
  * @param valueRange Allowed slider range.
  * @param isInteger When `true`, displays and commits integer values.
@@ -294,6 +318,8 @@ private fun AcceleratorSelectorRow(
 @Composable
 private fun NumberSliderRow(
     label: String,
+    infoTitle: String,
+    infoMessage: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     isInteger: Boolean,
@@ -312,15 +338,16 @@ private fun NumberSliderRow(
                 .fillMaxWidth()
                 .semantics(mergeDescendants = true) {},
     ) {
-        Text(
-            text =
+        SettingLabelWithInfo(
+            label =
                 stringResource(
                     R.string.ai_chat_settings_range_format,
                     label,
                     formatSliderValue(valueRange.start, isInteger),
                     formatSliderValue(valueRange.endInclusive, isInteger),
                 ),
-            style = MaterialTheme.typography.titleSmall,
+            infoTitle = infoTitle,
+            infoMessage = infoMessage,
         )
 
         Row(
@@ -388,6 +415,85 @@ private fun NumberSliderRow(
             }
         }
     }
+}
+
+/**
+ * Setting title row with an info icon that opens an explanation dialog.
+ *
+ * @param label Visible setting name (may include range text).
+ * @param infoTitle Dialog title for this setting.
+ * @param infoMessage Dialog body explaining the parameter and its impact.
+ */
+@Composable
+private fun SettingLabelWithInfo(
+    label: String,
+    infoTitle: String,
+    infoMessage: String,
+) {
+    var showInfo by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        IconButton(
+            onClick = { showInfo = true },
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription =
+                    stringResource(R.string.ai_chat_settings_info_cd, infoTitle),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+
+    if (showInfo) {
+        SettingInfoDialog(
+            title = infoTitle,
+            message = infoMessage,
+            onDismiss = { showInfo = false },
+        )
+    }
+}
+
+/**
+ * Modal explanation for a single model setting.
+ *
+ * @param title Setting name shown as the dialog title.
+ * @param message User-facing explanation of the parameter.
+ * @param onDismiss Called when the user closes the dialog.
+ */
+@Composable
+private fun SettingInfoDialog(
+    title: String,
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = title)
+        },
+        text = {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.ai_chat_settings_info_close))
+            }
+        },
+    )
 }
 
 /**

@@ -51,6 +51,15 @@
     <string name="ai_chat_settings_accelerator_gpu">GPU</string>
     <string name="ai_chat_settings_accelerator_npu">NPU</string>
     <string name="ai_chat_settings_accelerator_tpu">TPU</string>
+    <string name="ai_chat_settings_info_cd">About %1$s</string>
+    <string name="ai_chat_settings_info_close">Got it</string>
+    <string name="ai_chat_settings_info_accelerator">Chooses which hardware runs the model.\n\n• CPU — most compatible, usually slower.\n• GPU — typically faster on phones with a capable GPU.\n• NPU / TPU — specialized AI hardware when the device and model support it; may ignore sampling knobs like TopK, TopP, and Temperature.\n\nChanging this reloads the model.</string>
+    <string name="ai_chat_settings_info_max_tokens">Maximum context length (in tokens) the model can keep in memory for the conversation.\n\nHigher values let the model remember longer chats, but use more RAM and can slow responses. If the chat grows past this limit, older turns may be dropped.</string>
+    <string name="ai_chat_settings_info_topk">TopK limits each next-word choice to the K most likely tokens.\n\nLower TopK makes replies more focused and predictable. Higher TopK allows more variety. On NPU/TPU this setting may be ignored.</string>
+    <string name="ai_chat_settings_info_topp">TopP (nucleus sampling) keeps the smallest set of tokens whose combined probability is at least P.\n\nLower TopP (closer to 0) is more conservative. Higher TopP (closer to 1) is more open-ended. On NPU/TPU this setting may be ignored.</string>
+    <string name="ai_chat_settings_info_temperature">Temperature controls randomness in generation.\n\nNear 0: more deterministic, factual-sounding answers.\nNear 1: balanced creativity.\nAbove 1: more varied or surprising replies, sometimes less coherent.\n\nOn NPU/TPU this setting may be ignored.</string>
+    <string name="ai_chat_settings_info_system_prompt">A system instruction steers the model\'s overall behavior for the whole chat (tone, language, role, or rules).\n\nExample: ask it to answer only in Persian, act as a tutor, or stay concise. Leave empty for the model\'s default behavior. Applying a new prompt reloads or resets the conversation session.</string>
+    <string name="ai_chat_settings_system_prompt_label">System instruction</string>
 
     <string name="ai_chat_input_placeholder">Type a message…</string>
     <string name="ai_chat_send">Send</string>

@@ -10,6 +10,9 @@ object AiModelPreferenceKeys {
     /** Absolute path of the downloaded `.litertlm` model file. */
     const val MODEL_FILE_PATH: String = "model_file_path"
 
+    /** File name of the downloaded model (from remote `model.json`). */
+    const val MODEL_FILE_NAME: String = "model_file_name"
+
     /** Persisted [ir.hrka.llm.runtime.api.LlmAccelerator] name. */
     const val MODEL_ACCELERATOR: String = "model_accelerator"
 

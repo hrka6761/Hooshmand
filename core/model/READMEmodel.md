@@ -11,6 +11,8 @@ Shared domain models for the Hooshmand app. Pure Kotlin types with no Android fr
 | [Conversation] | Persisted AI chat conversation metadata |
 | [ChatMessage] | Persisted chat message |
 | [ChatMessageRole] | `USER` / `MODEL` / `ERROR` |
+| [ModelManifest] | Remote on-device model catalog (`models`) |
+| [ModelEntry] | One catalog entry (`model_name`, single/multi part URLs) |
 
 ## Usage
 
@@ -25,3 +27,5 @@ Other modules (`:core:data`, `:core:domain`, features) depend on this module for
 [Conversation]: src/main/java/ir/hrka/hooshmand/model/Conversation.kt
 [ChatMessage]: src/main/java/ir/hrka/hooshmand/model/ChatMessage.kt
 [ChatMessageRole]: src/main/java/ir/hrka/hooshmand/model/ChatMessageRole.kt
+[ModelManifest]: src/main/java/ir/hrka/hooshmand/model/ModelManifest.kt
+[ModelEntry]: src/main/java/ir/hrka/hooshmand/model/ModelEntry.kt

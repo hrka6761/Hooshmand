@@ -13,9 +13,14 @@ import ir.hrka.download.manager.api.DownloadManager
 import ir.hrka.download.manager.api.DownloadProgressObserver
 import ir.hrka.hooshmand.ai_chat.impl.data.AiModelFileLocator
 import ir.hrka.hooshmand.ai_chat.impl.data.AiModelPreferencesRepository
+import ir.hrka.hooshmand.ai_chat.impl.download.hasSinglePartAddress
 import ir.hrka.hooshmand.ai_chat.impl.download.toMultipartDownloadData
+import ir.hrka.hooshmand.ai_chat.impl.download.toSingleDownloadData
+import ir.hrka.hooshmand.ai_chat.impl.download.usesMultipartDownload
 import ir.hrka.hooshmand.data.repository.ChatHistoryRepository
+import ir.hrka.hooshmand.data.repository.ModelManifestRepository
 import ir.hrka.hooshmand.model.Conversation
+import ir.hrka.hooshmand.model.ModelEntry
 import ir.hrka.llm.runtime.api.LlmGenerationEvent
 import ir.hrka.llm.runtime.api.LlmInferenceRequest
 import ir.hrka.llm.runtime.api.LlmRuntime
@@ -42,10 +47,14 @@ import kotlinx.coroutines.launch
  * model file is ready, stream replies into [AiChatUiState.messages], persist completed turns
  * through [ChatHistoryRepository], and apply settings from the config dialog.
  *
+ * Model part URLs are loaded from remote `model.json` via [ModelManifestRepository]
+ * (always the last entry in `models`).
+ *
  * @property appContext Application context used for downloads and [LlmRuntimeFactory].
  * @property preferencesRepository Persists and resolves the downloaded model path.
  * @property modelFileLocator Locates/validates model files and download targets.
  * @property chatHistoryRepository Local conversation and message persistence.
+ * @property modelManifestRepository Remote model catalog (`model.json`).
  */
 @HiltViewModel
 class AiChatViewModel @Inject constructor(
@@ -53,6 +62,7 @@ class AiChatViewModel @Inject constructor(
     private val preferencesRepository: AiModelPreferencesRepository,
     private val modelFileLocator: AiModelFileLocator,
     private val chatHistoryRepository: ChatHistoryRepository,
+    private val modelManifestRepository: ModelManifestRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AiChatUiState())
@@ -60,10 +70,8 @@ class AiChatViewModel @Inject constructor(
     /** Observable UI state for download gate and chat session. */
     val uiState: StateFlow<AiChatUiState> = _uiState.asStateFlow()
 
-    private val modelDownloadId: String =
-        DownloadIds.multipart(AiChatModelDownloadParts.toMultipartDownloadData())
-
-    private val modelPartCount: Int = AiChatModelDownloadParts.parts.size
+    private var latestModel: ModelEntry? = null
+    private var modelDownloadId: String? = null
 
     private var activeDownloadManager: DownloadManager? = null
     private var downloadProgressObserver: DownloadProgressObserver? = null
@@ -161,7 +169,24 @@ class AiChatViewModel @Inject constructor(
                 return@launch
             }
 
-            val observer = getOrCreateDownloadObserver()
+            val model =
+                runCatching { ensureLatestModel() }.getOrElse { error ->
+                    _uiState.update {
+                        it.copy(
+                            isCheckingModel = false,
+                            isModelReady = false,
+                            showDownloadDialog = true,
+                            needsPublicStoragePermission = false,
+                            isDownloading = false,
+                            downloadProgress = null,
+                            errorMessage = error.message
+                                ?: "Failed to load model download info.",
+                        )
+                    }
+                    return@launch
+                }
+
+            val observer = getOrCreateDownloadObserver(model)
             val isActive = observer.isDownloadActive()
             observer.startObserving()
 
@@ -176,12 +201,13 @@ class AiChatViewModel @Inject constructor(
                         if (isActive) {
                             it.downloadProgress
                                 ?: ModelDownloadProgress(
-                                    totalBytes = AiChatModelDownloadParts.totalSizeInBytes,
-                                    totalParts = modelPartCount,
+                                    totalBytes = 0L,
+                                    totalParts = modelPartCount(model),
                                 )
                         } else {
                             null
                         },
+                    errorMessage = null,
                 )
             }
         }
@@ -226,6 +252,8 @@ class AiChatViewModel @Inject constructor(
 
     /**
      * Starts a new model download, or resumes when the current job is paused.
+     *
+     * Fetches the latest model entry from remote `model.json` before enqueueing the download.
      */
     fun startModelDownload() {
         if (_uiState.value.isPaused) {
@@ -234,41 +262,79 @@ class AiChatViewModel @Inject constructor(
         }
         if (_uiState.value.isDownloading) return
 
-        val storageLocation = _uiState.value.selectedStorageLocation
-        _uiState.update {
-            it.copy(
-                isDownloading = true,
-                isPaused = false,
-                errorMessage = null,
-                downloadProgress =
-                    ModelDownloadProgress(
-                        totalBytes = AiChatModelDownloadParts.totalSizeInBytes,
-                        totalParts = modelPartCount,
-                    ),
-            )
-        }
+        viewModelScope.launch {
+            val model =
+                runCatching { ensureLatestModel() }.getOrElse { error ->
+                    _uiState.update {
+                        it.copy(
+                            errorMessage = error.message
+                                ?: "Failed to load model download info.",
+                        )
+                    }
+                    return@launch
+                }
 
-        stopDownloadObservation()
-
-        val targetFile = modelFileLocator.modelFileFor(storageLocation)
-        val fileCreationMode =
-            if (targetFile != null && modelFileLocator.shouldOverwriteExistingFile(targetFile)) {
-                FileCreationMode.Overwrite
-            } else {
-                FileCreationMode.Append
+            val storageLocation = _uiState.value.selectedStorageLocation
+            _uiState.update {
+                it.copy(
+                    isDownloading = true,
+                    isPaused = false,
+                    errorMessage = null,
+                    downloadProgress =
+                        ModelDownloadProgress(
+                            totalBytes = 0L,
+                            totalParts = modelPartCount(model),
+                        ),
+                )
             }
 
-        val downloadManager =
-            DownloadManager.Builder(appContext)
-                .setMultiPartsDownloadData(AiChatModelDownloadParts.toMultipartDownloadData())
-                .setFileLocation(storageLocation)
-                .setDirectories(listOf(AiChatModelDownloadParts.MODEL_DIRECTORY))
-                .setFileCreationMode(fileCreationMode)
-                .setDownloadListener(createDownloadListener())
-                .build()
+            stopDownloadObservation()
+            downloadProgressObserver = null
 
-        activeDownloadManager = downloadManager
-        downloadManager.startDownload()
+            val targetFile =
+                modelFileLocator.modelFileFor(
+                    storageLocation = storageLocation,
+                    modelFileName = model.modelName,
+                )
+            val fileCreationMode =
+                if (
+                    targetFile != null &&
+                    modelFileLocator.shouldOverwriteExistingFile(
+                        file = targetFile,
+                        expectedFileName = model.modelName,
+                    )
+                ) {
+                    FileCreationMode.Overwrite
+                } else {
+                    FileCreationMode.Append
+                }
+
+            val builder =
+                DownloadManager.Builder(appContext)
+                    .setFileLocation(storageLocation)
+                    .setDirectories(listOf(AiChatModelStorage.MODEL_DIRECTORY))
+                    .setFileCreationMode(fileCreationMode)
+                    .setDownloadListener(createDownloadListener())
+
+            when {
+                model.hasSinglePartAddress() ->
+                    builder.setSingleItemDownloadData(model.toSingleDownloadData())
+
+                model.usesMultipartDownload() ->
+                    builder.setMultiPartsDownloadData(model.toMultipartDownloadData())
+
+                else ->
+                    error(
+                        "Model '${model.modelName}' has neither single_part_address " +
+                            "nor multi_part_address",
+                    )
+            }
+
+            val downloadManager = builder.build()
+            activeDownloadManager = downloadManager
+            modelDownloadId = downloadIdFor(model)
+            downloadManager.startDownload()
+        }
     }
 
     /**
@@ -276,9 +342,10 @@ class AiChatViewModel @Inject constructor(
      */
     fun pauseModelDownload() {
         if (!_uiState.value.isDownloading || _uiState.value.isPaused) return
+        val downloadId = modelDownloadId ?: return
 
         activeDownloadManager?.pauseDownload()
-            ?: DownloadProgressObserver.pauseDownload(appContext, modelDownloadId)
+            ?: DownloadProgressObserver.pauseDownload(appContext, downloadId)
     }
 
     /**
@@ -286,10 +353,12 @@ class AiChatViewModel @Inject constructor(
      */
     fun resumeModelDownload() {
         if (!_uiState.value.isDownloading && !_uiState.value.isPaused) return
+        val model = latestModel ?: return
+        val downloadId = modelDownloadId ?: downloadIdFor(model).also { modelDownloadId = it }
 
         activeDownloadManager?.resumeDownload()
-            ?: DownloadProgressObserver.resumeDownload(appContext, modelDownloadId)
-        getOrCreateDownloadObserver().startObserving()
+            ?: DownloadProgressObserver.resumeDownload(appContext, downloadId)
+        getOrCreateDownloadObserver(model).startObserving()
         _uiState.update { it.copy(isPaused = false, isDownloading = true) }
     }
 
@@ -297,8 +366,9 @@ class AiChatViewModel @Inject constructor(
      * Cancels the active model download and clears download progress UI.
      */
     fun cancelModelDownload() {
+        val downloadId = modelDownloadId
         activeDownloadManager?.stopDownload()
-            ?: DownloadProgressObserver.cancelDownload(appContext, modelDownloadId)
+            ?: downloadId?.let { DownloadProgressObserver.cancelDownload(appContext, it) }
         activeDownloadManager = null
         stopDownloadObservation()
         _uiState.update {
@@ -799,17 +869,64 @@ class AiChatViewModel @Inject constructor(
     }
 
     /**
-     * Returns an existing download observer or creates one for [modelDownloadId].
+     * Loads the latest [ModelEntry] from remote `model.json` (last catalog entry).
      *
+     * @return Cached or freshly fetched latest model.
+     */
+    private suspend fun ensureLatestModel(): ModelEntry {
+        latestModel?.let { return it }
+        val model = modelManifestRepository.getLatestModel()
+        latestModel = model
+        modelDownloadId = downloadIdFor(model)
+        return model
+    }
+
+    /**
+     * Builds the WorkManager unique id for [model].
+     *
+     * Prefers [ModelEntry.singlePartAddress] when present; otherwise multipart.
+     */
+    private fun downloadIdFor(model: ModelEntry): String =
+        when {
+            model.hasSinglePartAddress() ->
+                DownloadIds.singleFile(model.toSingleDownloadData())
+
+            model.usesMultipartDownload() ->
+                DownloadIds.multipart(model.toMultipartDownloadData())
+
+            else ->
+                error(
+                    "Model '${model.modelName}' has neither single_part_address " +
+                        "nor multi_part_address",
+                )
+        }
+
+    /**
+     * Number of download parts for progress UI.
+     *
+     * Prefers a single part when [ModelEntry.singlePartAddress] is set.
+     */
+    private fun modelPartCount(model: ModelEntry): Int =
+        when {
+            model.hasSinglePartAddress() -> 1
+            model.usesMultipartDownload() -> model.multiPartAddresses.size.coerceAtLeast(1)
+            else -> 1
+        }
+
+    /**
+     * Returns an existing download observer or creates one for [model].
+     *
+     * @param model Model used to derive the WorkManager download id.
      * @return Observer attached to this ViewModel scope.
      */
-    private fun getOrCreateDownloadObserver(): DownloadProgressObserver {
+    private fun getOrCreateDownloadObserver(model: ModelEntry): DownloadProgressObserver {
+        val downloadId = modelDownloadId ?: downloadIdFor(model).also { modelDownloadId = it }
         val existing = downloadProgressObserver
         if (existing != null) return existing
 
         return DownloadProgressObserver(
             context = appContext,
-            downloadId = modelDownloadId,
+            downloadId = downloadId,
             listener = createDownloadListener(),
             scope = viewModelScope,
         ).also { downloadProgressObserver = it }
@@ -830,6 +947,7 @@ class AiChatViewModel @Inject constructor(
     private fun createDownloadListener(): DownloadListener =
         object : DownloadListener {
             override fun onStartDownload() {
+                val parts = latestModel?.let(::modelPartCount) ?: 1
                 _uiState.update {
                     it.copy(
                         isDownloading = true,
@@ -838,8 +956,8 @@ class AiChatViewModel @Inject constructor(
                         downloadProgress =
                             it.downloadProgress?.copy(progress = 0f)
                                 ?: ModelDownloadProgress(
-                                    totalBytes = AiChatModelDownloadParts.totalSizeInBytes,
-                                    totalParts = modelPartCount,
+                                    totalBytes = 0L,
+                                    totalParts = parts,
                                 ),
                     )
                 }
@@ -861,7 +979,7 @@ class AiChatViewModel @Inject constructor(
                         downloadProgress =
                             ModelDownloadProgress(
                                 receivedBytes = receivedBytes,
-                                totalBytes = AiChatModelDownloadParts.totalSizeInBytes,
+                                totalBytes = it.downloadProgress?.totalBytes ?: 0L,
                                 progress = progress.coerceIn(0f, 1f),
                                 remainingTimeMs = remainingTime,
                                 downloadRateBytesPerSec = downloadRate,
@@ -888,7 +1006,7 @@ class AiChatViewModel @Inject constructor(
                         downloadProgress =
                             ModelDownloadProgress(
                                 receivedBytes = receivedBytes,
-                                totalBytes = AiChatModelDownloadParts.totalSizeInBytes,
+                                totalBytes = it.downloadProgress?.totalBytes ?: 0L,
                                 progress = progress.coerceIn(0f, 1f),
                                 remainingTimeMs = remainingTime,
                                 downloadRateBytesPerSec = downloadRate,

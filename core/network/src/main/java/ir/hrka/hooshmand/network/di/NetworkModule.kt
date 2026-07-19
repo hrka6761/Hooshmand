@@ -6,7 +6,9 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import ir.hrka.hooshmand.network.ChangelogNetworkDataSource
+import ir.hrka.hooshmand.network.ModelManifestNetworkDataSource
 import ir.hrka.hooshmand.network.github.GitHubChangelogNetworkDataSource
+import ir.hrka.hooshmand.network.github.GitHubModelManifestNetworkDataSource
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -24,6 +26,12 @@ internal abstract class NetworkBindingsModule {
     abstract fun bindChangelogNetworkDataSource(
         impl: GitHubChangelogNetworkDataSource,
     ): ChangelogNetworkDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindModelManifestNetworkDataSource(
+        impl: GitHubModelManifestNetworkDataSource,
+    ): ModelManifestNetworkDataSource
 }
 
 /**

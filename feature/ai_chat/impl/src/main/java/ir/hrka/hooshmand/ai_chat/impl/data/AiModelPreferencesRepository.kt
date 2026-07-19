@@ -4,6 +4,7 @@ import ir.hrka.datastore.api.PrimitiveDataStore
 import ir.hrka.hooshmand.ai_chat.impl.AiChatModelSettings
 import ir.hrka.llm.runtime.api.LlmAccelerator
 import ir.hrka.llm.runtime.api.LlmRuntimeConfig
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -46,6 +47,14 @@ constructor(
         dataStore.getString(AiModelPreferenceKeys.MODEL_FILE_PATH, default = "")
 
     /**
+     * Returns the persisted model file name from the last successful download.
+     *
+     * @return File name, or empty when unset.
+     */
+    suspend fun getModelFileName(): String =
+        dataStore.getString(AiModelPreferenceKeys.MODEL_FILE_NAME, default = "")
+
+    /**
      * Returns whether the model file is available to use.
      *
      * 1. Read the path from preferences and verify it points to a complete valid model file.
@@ -56,7 +65,12 @@ constructor(
      */
     suspend fun isModelReady(): Boolean {
         val storedPath = getModelFilePath()
-        val validPath = modelFileLocator.resolveValidModelPath(storedPath) ?: return false
+        val expectedFileName = getModelFileName().ifBlank { null }
+        val validPath =
+            modelFileLocator.resolveValidModelPath(
+                storedPath = storedPath,
+                expectedFileName = expectedFileName,
+            ) ?: return false
         if (validPath != storedPath) {
             saveDownloadSuccess(filePath = validPath)
         }
@@ -64,13 +78,17 @@ constructor(
     }
 
     /**
-     * Marks the model as downloaded and stores its absolute [filePath].
+     * Marks the model as downloaded and stores its absolute [filePath] and file name.
      *
      * @param filePath Absolute path to the completed `.litertlm` file.
      */
     suspend fun saveDownloadSuccess(filePath: String) {
         dataStore.putBoolean(AiModelPreferenceKeys.IS_MODEL_DOWNLOADED, value = true)
         dataStore.putString(AiModelPreferenceKeys.MODEL_FILE_PATH, value = filePath)
+        dataStore.putString(
+            AiModelPreferenceKeys.MODEL_FILE_NAME,
+            value = File(filePath).name,
+        )
     }
 
     /**
@@ -79,6 +97,7 @@ constructor(
     suspend fun clearDownloadState() {
         dataStore.putBoolean(AiModelPreferenceKeys.IS_MODEL_DOWNLOADED, value = false)
         dataStore.putString(AiModelPreferenceKeys.MODEL_FILE_PATH, value = "")
+        dataStore.putString(AiModelPreferenceKeys.MODEL_FILE_NAME, value = "")
     }
 
     /**

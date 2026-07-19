@@ -4,7 +4,7 @@ import android.content.Context
 import android.os.Environment
 import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.hrka.download.manager.DownloadStorageLocation
-import ir.hrka.hooshmand.ai_chat.impl.AiChatModelDownloadParts
+import ir.hrka.hooshmand.ai_chat.impl.AiChatModelStorage
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,26 +20,52 @@ class AiModelFileLocator @Inject constructor(
      * Returns the absolute path of a complete, valid model file if one exists.
      *
      * Checks the stored [storedPath] first, then internal storage, then public storage.
+     *
+     * @param storedPath Preferred path from preferences, or `null`.
+     * @param expectedFileName Expected `.litertlm` file name from the remote catalog, or `null`
+     * to accept any `.litertlm` under the model directory.
      */
-    fun resolveValidModelPath(storedPath: String?): String? =
-        candidateFiles(storedPath)
-            .firstOrNull(::isValidCompleteModelFile)
+    fun resolveValidModelPath(
+        storedPath: String?,
+        expectedFileName: String? = null,
+    ): String? =
+        candidateFiles(storedPath = storedPath, expectedFileName = expectedFileName)
+            .firstOrNull { isValidCompleteModelFile(file = it, expectedFileName = expectedFileName) }
             ?.absolutePath
 
-    /** Resolves the expected model output file for [storageLocation]. */
-    fun modelFileFor(storageLocation: DownloadStorageLocation): File? =
+    /**
+     * Resolves the expected model output file for [storageLocation].
+     *
+     * @param storageLocation Chosen download storage.
+     * @param modelFileName Output file name from the remote catalog.
+     */
+    fun modelFileFor(
+        storageLocation: DownloadStorageLocation,
+        modelFileName: String,
+    ): File? =
         when (storageLocation) {
-            DownloadStorageLocation.Internal -> internalModelFile()
-            DownloadStorageLocation.Public -> publicModelFile()
+            DownloadStorageLocation.Internal -> internalModelFile(modelFileName)
+            DownloadStorageLocation.Public -> publicModelFile(modelFileName)
             DownloadStorageLocation.External -> null
         }
 
-    /** Whether [file] is a complete model file with the expected name, type, and size. */
-    fun isValidCompleteModelFile(file: File): Boolean {
+    /**
+     * Whether [file] is a usable model file.
+     *
+     * Without a known expected size from the remote catalog, any non-empty `.litertlm` with the
+     * expected name (when provided) is accepted.
+     *
+     * @param file Candidate file.
+     * @param expectedFileName Expected file name, or `null` to skip the name check.
+     */
+    fun isValidCompleteModelFile(
+        file: File,
+        expectedFileName: String? = null,
+    ): Boolean {
         if (!file.isFile) return false
-        if (!hasValidModelType(file)) return false
-        val expectedSize = AiChatModelDownloadParts.totalSizeInBytes ?: return false
-        return file.length() == expectedSize
+        if (!file.name.endsWith(MODEL_FILE_EXTENSION)) return false
+        if (expectedFileName != null && file.name != expectedFileName) return false
+        return file.length() > 0L
     }
 
     /**
@@ -58,10 +84,6 @@ class AiModelFileLocator @Inject constructor(
     /**
      * Whether reading [absolutePath] requires all-files access that is not currently granted.
      *
-     * Public Downloads models can be detected via [File] APIs even when
-     * [Environment.isExternalStorageManager] is false, but loading them for inference still
-     * needs that permission.
-     *
      * @param absolutePath Absolute filesystem path of the model file.
      * @return `true` when the path is public and manage-all-files access is missing.
      */
@@ -71,47 +93,65 @@ class AiModelFileLocator @Inject constructor(
     /**
      * Whether an existing file at the download target should be overwritten instead of appended.
      *
-     * Partial downloads with the correct type can resume via append; invalid type or oversized
-     * files must be replaced.
+     * @param file Target output file.
+     * @param expectedFileName Expected model file name.
      */
-    fun shouldOverwriteExistingFile(file: File): Boolean {
+    fun shouldOverwriteExistingFile(
+        file: File,
+        expectedFileName: String,
+    ): Boolean {
         if (!file.exists()) return false
-        if (isValidCompleteModelFile(file)) return false
-        if (!hasValidModelType(file)) return true
-        val expectedSize = AiChatModelDownloadParts.totalSizeInBytes ?: return false
-        return file.length() > expectedSize
+        if (isValidCompleteModelFile(file = file, expectedFileName = expectedFileName)) {
+            return false
+        }
+        if (!file.name.endsWith(MODEL_FILE_EXTENSION)) return true
+        return false
     }
 
-
-    private fun candidateFiles(storedPath: String?): List<File> =
+    private fun candidateFiles(
+        storedPath: String?,
+        expectedFileName: String?,
+    ): List<File> =
         buildList {
             if (!storedPath.isNullOrBlank()) {
                 add(File(storedPath))
             }
-            add(internalModelFile())
-            publicModelFile()?.let(::add)
+            if (!expectedFileName.isNullOrBlank()) {
+                add(internalModelFile(expectedFileName))
+                publicModelFile(expectedFileName)?.let(::add)
+            } else {
+                listLitertlmFiles(internalModelDirectory()).forEach(::add)
+                publicModelDirectory()?.let { dir ->
+                    listLitertlmFiles(dir).forEach(::add)
+                }
+            }
         }.distinctBy { it.absolutePath }
 
-    private fun internalModelFile(): File =
-        File(
-            File(context.filesDir, AiChatModelDownloadParts.MODEL_DIRECTORY),
-            AiChatModelDownloadParts.MODEL_FILE_NAME,
-        )
+    private fun internalModelDirectory(): File =
+        File(context.filesDir, AiChatModelStorage.MODEL_DIRECTORY)
 
-    private fun publicModelFile(): File? {
+    private fun publicModelDirectory(): File? {
         val baseDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         if (Environment.getExternalStorageState(baseDir) != Environment.MEDIA_MOUNTED) {
             return null
         }
-        return File(
-            File(baseDir, AiChatModelDownloadParts.MODEL_DIRECTORY),
-            AiChatModelDownloadParts.MODEL_FILE_NAME,
-        )
+        return File(baseDir, AiChatModelStorage.MODEL_DIRECTORY)
     }
 
-    private fun hasValidModelType(file: File): Boolean {
-        if (file.name != AiChatModelDownloadParts.MODEL_FILE_NAME) return false
-        return file.name.endsWith(MODEL_FILE_EXTENSION)
+    private fun internalModelFile(modelFileName: String): File =
+        File(internalModelDirectory(), modelFileName)
+
+    private fun publicModelFile(modelFileName: String): File? {
+        val directory = publicModelDirectory() ?: return null
+        return File(directory, modelFileName)
+    }
+
+    private fun listLitertlmFiles(directory: File): List<File> {
+        if (!directory.isDirectory) return emptyList()
+        return directory
+            .listFiles { file -> file.isFile && file.name.endsWith(MODEL_FILE_EXTENSION) }
+            ?.toList()
+            .orEmpty()
     }
 
     private companion object {

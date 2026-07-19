@@ -13,6 +13,10 @@ Data layer for Hooshmand. Owns repositories that map network and local sources i
 | [ChatHistoryRepository] | Public API for local chat conversations and messages |
 | [DefaultChatHistoryRepository] | Room DAOs → domain [Conversation] / [ChatMessage] |
 | [ConversationMapper] / [ChatMessageMapper] | Entity ↔ domain mappers |
+| [ModelManifestRepository] | Public API to load remote model catalog |
+| [DefaultModelManifestRepository] | Base64-decode → parse → [ModelManifest]; latest = last entry |
+| [NetworkModelManifest] | DTO for decoded `models.json` payload |
+| [ModelManifestMapper] | `NetworkModelManifest` → `ModelManifest` |
 
 ## Dependencies
 
@@ -29,7 +33,7 @@ Data layer for Hooshmand. Owns repositories that map network and local sources i
 implementation(projects.core.data)
 ```
 
-Inject [ChangelogRepository] or [ChatHistoryRepository]. Features should consume domain models, not Room entities.
+Inject [ChangelogRepository], [ChatHistoryRepository], or [ModelManifestRepository]. Features should consume domain models, not Room entities / network DTOs.
 
 [ChangelogRepository]: src/main/java/ir/hrka/hooshmand/data/repository/ChangelogRepository.kt
 [DefaultChangelogRepository]: src/main/java/ir/hrka/hooshmand/data/repository/DefaultChangelogRepository.kt
@@ -39,6 +43,11 @@ Inject [ChangelogRepository] or [ChatHistoryRepository]. Features should consume
 [DefaultChatHistoryRepository]: src/main/java/ir/hrka/hooshmand/data/repository/DefaultChatHistoryRepository.kt
 [ConversationMapper]: src/main/java/ir/hrka/hooshmand/data/model/ConversationMapper.kt
 [ChatMessageMapper]: src/main/java/ir/hrka/hooshmand/data/model/ChatMessageMapper.kt
+[ModelManifestRepository]: src/main/java/ir/hrka/hooshmand/data/repository/ModelManifestRepository.kt
+[DefaultModelManifestRepository]: src/main/java/ir/hrka/hooshmand/data/repository/DefaultModelManifestRepository.kt
+[NetworkModelManifest]: src/main/java/ir/hrka/hooshmand/data/model/NetworkModelManifest.kt
+[ModelManifestMapper]: src/main/java/ir/hrka/hooshmand/data/model/ModelManifestMapper.kt
 [Changelog]: ../model/src/main/java/ir/hrka/hooshmand/model/Changelog.kt
 [Conversation]: ../model/src/main/java/ir/hrka/hooshmand/model/Conversation.kt
 [ChatMessage]: ../model/src/main/java/ir/hrka/hooshmand/model/ChatMessage.kt
+[ModelManifest]: ../model/src/main/java/ir/hrka/hooshmand/model/ModelManifest.kt

@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Hooshmand" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+      System splash theme. Applied to MainActivity until installSplashScreen() swaps to
+      [postSplashScreenTheme].
+    -->
+    <style name="Theme.Hooshmand.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.Hooshmand</item>
+    </style>
 </resources>

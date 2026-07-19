@@ -50,6 +50,7 @@ alias(libs.plugins.hrka.android.flavors)
 | `:feature:home:impl` | Home screen entry provider |
 | `androidx.navigation3:navigation3-ui` | `NavDisplay`, `entryProvider` |
 | Compose Material 3, Activity Compose | UI framework |
+| `androidx.core:core-splashscreen` | System splash (`installSplashScreen` / `setKeepOnScreenCondition`) |
 
 ---
 
@@ -77,7 +78,7 @@ app/src/main/
 
 | Class / function | File | Responsibility |
 |------------------|------|----------------|
-| `MainActivity` | `MainActivity.kt` | Edge-to-edge Activity; initializes nav with `HomeNavKey` |
+| `MainActivity` | `MainActivity.kt` | SplashScreen + edge-to-edge Activity; initializes nav with `HomeNavKey` |
 | `HooshmandApp` | `HooshmandApp.kt` | Scaffold + `NavDisplay`; wires `homeEntry(navigator)` |
 | `HooshmandTheme` | `ui/theme/Theme.kt` | Material 3 theme (dynamic color on API 31+) |
 | `LocalSnackbarHostState` | `core/Utils.kt` | CompositionLocal for global snackbars |

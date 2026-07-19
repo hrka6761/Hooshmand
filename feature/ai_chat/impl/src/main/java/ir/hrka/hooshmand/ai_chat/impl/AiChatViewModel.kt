@@ -71,6 +71,8 @@ class AiChatViewModel @Inject constructor(
     private var generationJob: Job? = null
     private var initializeJob: Job? = null
     private var conversationId: String? = null
+    private var conversationMessagesLoaded: Boolean = false
+    private var runtimeHistorySeeded: Boolean = false
 
     init {
         viewModelScope.launch {
@@ -84,13 +86,16 @@ class AiChatViewModel @Inject constructor(
      * Binds this screen to a conversation and loads any saved messages.
      *
      * Safe to call once per navigation entry. Does not overwrite in-memory messages if the
-     * user already started chatting before the load finished.
+     * user already started chatting before the load finished. After load, seeds the LiteRT
+     * session when the runtime is ready so the model remembers prior turns.
      *
      * @param conversationId Stable conversation id from [ir.hrka.hooshmand.ai_chat.api.AiChatNavKey].
      */
     fun bindConversation(conversationId: String) {
         if (this.conversationId == conversationId) return
         this.conversationId = conversationId
+        conversationMessagesLoaded = false
+        runtimeHistorySeeded = false
         viewModelScope.launch {
             val storedMessages =
                 chatHistoryRepository.observeMessages(conversationId).first()
@@ -102,6 +107,8 @@ class AiChatViewModel @Inject constructor(
                     state.copy(messages = storedMessages)
                 }
             }
+            conversationMessagesLoaded = true
+            seedRuntimeHistoryIfNeeded()
         }
     }
 
@@ -463,6 +470,7 @@ class AiChatViewModel @Inject constructor(
             )
         }
 
+        runtimeHistorySeeded = true
         viewModelScope.launch {
             if (id != null) {
                 chatHistoryRepository.deleteMessagesForConversation(id)
@@ -471,6 +479,7 @@ class AiChatViewModel @Inject constructor(
             runCatching {
                 runtime.resetConversation(
                     systemInstruction = _uiState.value.modelSettings.systemInstruction,
+                    initialMessages = emptyList(),
                 )
             }.onFailure { error ->
                 _uiState.update {
@@ -547,11 +556,15 @@ class AiChatViewModel @Inject constructor(
 
     /**
      * Loads the on-device model into [llmRuntime] using the current [AiChatUiState.modelSettings].
+     *
+     * After a successful load, seeds prior conversation turns into the LiteRT session when they
+     * are already available from Room.
      */
     private fun initializeRuntime() {
         initializeJob?.cancel()
         initializeJob =
             viewModelScope.launch {
+                runtimeHistorySeeded = false
                 _uiState.update {
                     it.copy(isModelInitializing = true, runtimeErrorMessage = null)
                 }
@@ -575,6 +588,8 @@ class AiChatViewModel @Inject constructor(
                     runtime.initialize(
                         _uiState.value.modelSettings.toRuntimeConfig(modelPath = modelPath),
                     )
+                    // Seed before clearing the initializing flag so send stays blocked.
+                    seedRuntimeHistoryIfNeeded()
                     _uiState.update {
                         it.copy(isModelInitializing = false, runtimeErrorMessage = null)
                     }
@@ -590,6 +605,40 @@ class AiChatViewModel @Inject constructor(
                     }
                 }
             }
+    }
+
+    /**
+     * Restores saved USER/MODEL turns into the LiteRT conversation when both Room load and
+     * runtime init have finished.
+     *
+     * Safe to call from either path; runs at most once until the next init/bind/clear.
+     */
+    private suspend fun seedRuntimeHistoryIfNeeded() {
+        if (runtimeHistorySeeded) return
+        if (!conversationMessagesLoaded) return
+        val runtime = llmRuntime ?: return
+        if (runtime.state != LlmRuntimeState.READY) return
+
+        val historyMessages = _uiState.value.messages.toLlmHistoryMessages()
+        if (historyMessages.isEmpty()) {
+            runtimeHistorySeeded = true
+            return
+        }
+
+        runCatching {
+            runtime.resetConversation(
+                systemInstruction = _uiState.value.modelSettings.systemInstruction,
+                initialMessages = historyMessages,
+            )
+            runtimeHistorySeeded = true
+        }.onFailure { error ->
+            _uiState.update {
+                it.copy(
+                    runtimeErrorMessage = error.message
+                        ?: "Failed to restore conversation context.",
+                )
+            }
+        }
     }
 
     /**

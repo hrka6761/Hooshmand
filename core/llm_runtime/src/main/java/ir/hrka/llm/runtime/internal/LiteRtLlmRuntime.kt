@@ -16,6 +16,8 @@ import com.google.ai.edge.litertlm.SamplerConfig
 import ir.hrka.llm.runtime.api.LlmAccelerator
 import ir.hrka.llm.runtime.api.LlmGenerationCallback
 import ir.hrka.llm.runtime.api.LlmGenerationEvent
+import ir.hrka.llm.runtime.api.LlmHistoryMessage
+import ir.hrka.llm.runtime.api.LlmHistoryRole
 import ir.hrka.llm.runtime.api.LlmInferenceRequest
 import ir.hrka.llm.runtime.api.LlmRuntime
 import ir.hrka.llm.runtime.api.LlmRuntimeConfig
@@ -257,7 +259,10 @@ internal class LiteRtLlmRuntime(
     }
 
     @OptIn(ExperimentalApi::class)
-    override suspend fun resetConversation(systemInstruction: String?) {
+    override suspend fun resetConversation(
+        systemInstruction: String?,
+        initialMessages: List<LlmHistoryMessage>,
+    ) {
         mutex.withLock {
             ensureReady()
             if (currentState == LlmRuntimeState.GENERATING) {
@@ -276,6 +281,7 @@ internal class LiteRtLlmRuntime(
                         buildConversationConfig(
                             config = config,
                             systemInstruction = systemInstruction ?: config.systemInstruction,
+                            initialMessages = initialMessages,
                         ),
                     )
             } catch (e: Exception) {
@@ -348,6 +354,7 @@ internal class LiteRtLlmRuntime(
                 buildConversationConfig(
                     config = config,
                     systemInstruction = config.systemInstruction,
+                    initialMessages = emptyList(),
                 ),
             )
 
@@ -358,6 +365,7 @@ internal class LiteRtLlmRuntime(
     private fun buildConversationConfig(
         config: LlmRuntimeConfig,
         systemInstruction: String?,
+        initialMessages: List<LlmHistoryMessage>,
     ): ConversationConfig {
         val instruction =
             systemInstruction?.takeIf { it.isNotBlank() }?.let { Contents.of(it) }
@@ -376,8 +384,21 @@ internal class LiteRtLlmRuntime(
         return ConversationConfig(
             samplerConfig = samplerConfig,
             systemInstruction = instruction,
+            initialMessages = initialMessages.map { it.toLiteRtMessage() },
         )
     }
+
+    /**
+     * Maps a domain history turn to a LiteRT [Message].
+     *
+     * @return LiteRT user or model message.
+     */
+    @OptIn(ExperimentalApi::class)
+    private fun LlmHistoryMessage.toLiteRtMessage(): Message =
+        when (role) {
+            LlmHistoryRole.USER -> Message.user(text)
+            LlmHistoryRole.MODEL -> Message.model(text)
+        }
 
     private fun releaseEngineLocked() {
         releaseEngineResources(conversation, engine)

@@ -58,9 +58,15 @@ interface LlmRuntime {
     /**
      * Resets the conversation history while keeping the loaded model in memory.
      *
-     * @param systemInstruction Optional new system instruction. Uses the config from [initialize] if null.
+     * @param systemInstruction Optional new system instruction. Uses the config from [initialize]
+     * if null.
+     * @param initialMessages Prior turns to restore into the new session (for example after
+     * reopening a saved chat). Empty starts a blank conversation.
      */
-    suspend fun resetConversation(systemInstruction: String? = null)
+    suspend fun resetConversation(
+        systemInstruction: String? = null,
+        initialMessages: List<LlmHistoryMessage> = emptyList(),
+    )
 
     /**
      * Releases all native resources (engine, conversation).

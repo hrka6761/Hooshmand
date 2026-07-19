@@ -56,11 +56,28 @@ runtime.generateFlow(LlmInferenceRequest(prompt = "Hello!"))
 | `LlmRuntimeFactory` | Creates runtime instances |
 | `LlmRuntimeConfig` | Model path, accelerator, sampler settings |
 | `LlmInferenceRequest` | Prompt and optional multimodal input |
+| `LlmHistoryMessage` / `LlmHistoryRole` | Prior turns for seeding a session |
 | `LlmGenerationCallback` | Token streaming callback |
 | `LlmGenerationEvent` | Flow events for streaming |
 | `LlmAccelerator` | CPU / GPU / NPU / TPU |
 | `LlmRuntimeState` | Lifecycle state |
 | `LlmRuntimeException` | Typed error hierarchy |
+
+### Restoring conversation context
+
+After [initialize], call [LlmRuntime.resetConversation] with saved turns so the model remembers prior messages when reopening a chat:
+
+```kotlin
+runtime.resetConversation(
+    systemInstruction = "You are a helpful assistant.",
+    initialMessages = listOf(
+        LlmHistoryMessage(LlmHistoryRole.USER, "My name is Hamid"),
+        LlmHistoryMessage(LlmHistoryRole.MODEL, "Nice to meet you, Hamid!"),
+    ),
+)
+```
+
+Uses LiteRT `ConversationConfig.initialMessages` under the hood (same approach as Google AI Edge Gallery).
 
 ## Model format
 

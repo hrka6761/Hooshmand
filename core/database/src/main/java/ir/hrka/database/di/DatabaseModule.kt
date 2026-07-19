@@ -8,7 +8,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import ir.hrka.database.HooshmandDatabase
-import ir.hrka.database.dao.PlaceholderDao
+import ir.hrka.database.dao.ConversationDao
+import ir.hrka.database.dao.MessageDao
 import javax.inject.Singleton
 
 /**
@@ -20,6 +21,8 @@ internal object DatabaseModule {
 
     /**
      * Builds the app Room database file `hooshmand-database`.
+     *
+     * Uses destructive migration for pre-release schema resets (placeholder → chat tables).
      *
      * @param context Application context.
      * @return Configured [HooshmandDatabase].
@@ -33,7 +36,9 @@ internal object DatabaseModule {
             context,
             HooshmandDatabase::class.java,
             "hooshmand-database",
-        ).build()
+        )
+            .fallbackToDestructiveMigration(dropAllTables = true)
+            .build()
 }
 
 /**
@@ -45,10 +50,19 @@ internal object DaosModule {
 
     /**
      * @param database App Room database.
-     * @return [PlaceholderDao] for the temporary scaffold table.
+     * @return [ConversationDao] for conversation rows.
      */
     @Provides
-    fun providesPlaceholderDao(
+    fun providesConversationDao(
         database: HooshmandDatabase,
-    ): PlaceholderDao = database.placeholderDao()
+    ): ConversationDao = database.conversationDao()
+
+    /**
+     * @param database App Room database.
+     * @return [MessageDao] for message rows.
+     */
+    @Provides
+    fun providesMessageDao(
+        database: HooshmandDatabase,
+    ): MessageDao = database.messageDao()
 }

@@ -30,6 +30,7 @@ include(":core:model")
 include(":core:network")
 include(":core:data")
 include(":core:domain")
+include(":core:database")
 
 include(":feature:home:api")
 include(":feature:home:impl")

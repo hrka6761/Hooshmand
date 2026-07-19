@@ -22,6 +22,9 @@ dependencies {
     compileOnly(libs.kotlin.gradlePlugin)
     compileOnly(libs.compose.gradlePlugin)
     compileOnly(libs.android.tools.common)
+    // implementation: RoomExtension/KspExtension must be on the plugin runtime classpath
+    implementation(libs.ksp.gradlePlugin)
+    implementation(libs.room.gradlePlugin)
 }
 
 tasks {
@@ -56,6 +59,10 @@ gradlePlugin {
         register("hilt") {
             id = libs.plugins.hrka.android.hilt.get().pluginId
             implementationClass = "HiltConventionPlugin"
+        }
+        register("room") {
+            id = libs.plugins.hrka.android.room.get().pluginId
+            implementationClass = "AndroidRoomConventionPlugin"
         }
         register("featureApi") {
             id = libs.plugins.hooshmand.feature.api.get().pluginId

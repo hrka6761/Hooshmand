@@ -40,7 +40,8 @@ Hooshmand/
 │   ├── model/                    # Shared domain models (changelog, etc.)
 │   ├── network/                  # HTTP clients & network DTOs
 │   ├── data/                     # Repositories mapping network → domain
-│   └── domain/                   # Use cases & business rules
+│   ├── domain/                   # Use cases & business rules
+│   └── database/                 # Room database, entities, DAOs
 ├── feature/
 │   └── home/
 │       ├── api/                  # Home feature public contract (NavKey)
@@ -64,6 +65,7 @@ Hooshmand/
 | `:core:network` | HTTP clients and network DTOs (GitHub Contents API) | [READMEnetwork.md](core/network/READMEnetwork.md) |
 | `:core:data` | Repositories mapping network responses to domain models | [READMEdata.md](core/data/READMEdata.md) |
 | `:core:domain` | Use cases and business rules (e.g. app update check) | [READMEdomain.md](core/domain/READMEdomain.md) |
+| `:core:database` | Room database, entities, and DAOs | [READMEdatabase.md](core/database/READMEdatabase.md) |
 | `:feature:home:api` | Home feature navigation key (`HomeNavKey`) | [READMEapi.md](feature/home/api/READMEapi.md) |
 | `:feature:home:impl` | Home screen UI and `homeEntry` registration | [READMEimpl.md](feature/home/impl/READMEimpl.md) |
 

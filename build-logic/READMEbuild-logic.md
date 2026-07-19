@@ -41,6 +41,7 @@ build-logic/
 | `hrka.android.library` | `AndroidLibraryConventionPlugin` | Library modules | Android library defaults |
 | `hrka.android.library.compose` | `AndroidLibraryComposeConventionPlugin` | Compose libraries | Compose on library modules |
 | `hrka.android.hilt` | `HiltConventionPlugin` | Feature impl (etc.) | KSP + Hilt dependencies |
+| `hrka.android.room` | `AndroidRoomConventionPlugin` | Room modules | Room + KSP + schema export |
 | `hooshmand.feature.api` | `AndroidFeatureApiConventionPlugin` | `feature:*:api` | Navigation3 UI + kotlinx-serialization |
 | `hooshmand.feature.impl` | `AndroidFeatureImplConventionPlugin` | `feature:*:impl` | Compose, lifecycle, nav, `:core:navigation` |
 

@@ -39,7 +39,7 @@ Hooshmand/
 │   ├── navigation/               # Shared Navigation 3 state & Navigator
 │   ├── model/                    # Shared domain models (changelog, etc.)
 │   ├── network/                  # HTTP clients & network DTOs
-│   ├── data/                     # Repositories mapping network → domain
+│   ├── data/                     # Repositories mapping network/local → domain
 │   ├── domain/                   # Use cases & business rules
 │   └── database/                 # Room database, entities, DAOs
 ├── feature/
@@ -63,7 +63,7 @@ Hooshmand/
 | `:core:navigation` | `NavigationState`, `Navigator`, back-stack helpers for Navigation 3 | [READMEnavigation.md](core/navigation/READMEnavigation.md) |
 | `:core:model` | Shared domain models (e.g. changelog / version info) | [READMEmodel.md](core/model/READMEmodel.md) |
 | `:core:network` | HTTP clients and network DTOs (GitHub Contents API) | [READMEnetwork.md](core/network/READMEnetwork.md) |
-| `:core:data` | Repositories mapping network responses to domain models | [READMEdata.md](core/data/READMEdata.md) |
+| `:core:data` | Repositories mapping network/local sources to domain models | [READMEdata.md](core/data/READMEdata.md) |
 | `:core:domain` | Use cases and business rules (e.g. app update check) | [READMEdomain.md](core/domain/READMEdomain.md) |
 | `:core:database` | Room database, entities, and DAOs | [READMEdatabase.md](core/database/READMEdatabase.md) |
 | `:feature:home:api` | Home feature navigation key (`HomeNavKey`) | [READMEapi.md](feature/home/api/READMEapi.md) |

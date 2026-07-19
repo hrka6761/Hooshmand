@@ -82,6 +82,7 @@ app/src/main/
 |------------------|------|----------------|
 | `MainActivity` | `MainActivity.kt` | SplashScreen + edge-to-edge Activity; initializes nav with `HomeNavKey` |
 | `MainActivityViewModel` | `MainActivityViewModel.kt` | Runs `CheckAppUpdateUseCase`; drives `setKeepOnScreenCondition` |
+| `AppUpdateDialog` | `ui/AppUpdateDialog.kt` | Optional / mandatory update prompt (Cafe Bazaar) |
 | `HooshmandApp` | `HooshmandApp.kt` | Scaffold + `NavDisplay`; wires `homeEntry(navigator)` |
 | `HooshmandTheme` | `ui/theme/Theme.kt` | Material 3 theme (dynamic color on API 31+) |
 | `LocalSnackbarHostState` | `core/Utils.kt` | CompositionLocal for global snackbars |

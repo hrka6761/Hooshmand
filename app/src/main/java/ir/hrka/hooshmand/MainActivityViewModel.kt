@@ -7,10 +7,10 @@ import ir.hrka.hooshmand.MainActivityUiState.CheckingUpdate
 import ir.hrka.hooshmand.MainActivityUiState.Ready
 import ir.hrka.hooshmand.domain.AppUpdateStatus
 import ir.hrka.hooshmand.domain.CheckAppUpdateUseCase
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -23,24 +23,36 @@ class MainActivityViewModel @Inject constructor(
     private val checkAppUpdateUseCase: CheckAppUpdateUseCase,
 ) : ViewModel() {
 
+    private val _uiState = MutableStateFlow<MainActivityUiState>(CheckingUpdate)
+
     /**
      * Startup UI state. Starts as [CheckingUpdate], then becomes [Ready] with an
      * [AppUpdateStatus] (or [AppUpdateStatus.NoUpdate] if the check fails).
      */
-    val uiState: StateFlow<MainActivityUiState> = flow {
-        val status = runCatching {
-            checkAppUpdateUseCase(BuildConfig.VERSION_CODE)
-        }.getOrDefault(AppUpdateStatus.NoUpdate)
-        emit(Ready(status))
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = CheckingUpdate,
-    )
+    val uiState: StateFlow<MainActivityUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val status = runCatching {
+                checkAppUpdateUseCase(BuildConfig.VERSION_CODE)
+            }.getOrDefault(AppUpdateStatus.NoUpdate)
+            _uiState.value = Ready(status)
+        }
+    }
+
+    /**
+     * Dismisses an optional update dialog so the user can continue using the app.
+     */
+    fun dismissOptionalUpdate() {
+        val current = _uiState.value
+        if (current is Ready && current.updateStatus is AppUpdateStatus.OptionalUpdate) {
+            _uiState.value = Ready(AppUpdateStatus.NoUpdate)
+        }
+    }
 }
 
 /**
- * Startup state used to drive the splash keep-on-screen condition and later update dialogs.
+ * Startup state used to drive the splash keep-on-screen condition and update dialogs.
  */
 sealed interface MainActivityUiState {
 

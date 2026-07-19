@@ -1,4 +1,10 @@
 <resources>
     <string name="app_name">Hooshmand</string>
     <string name="home">Home</string>
+
+    <string name="app_update_dialog_title">Update</string>
+    <string name="app_update_dialog_message">A new version of the app is available.</string>
+    <string name="app_update_dialog_mandatory_message">\nIf you do not update, you cannot use the app.</string>
+    <string name="app_update_dialog_update">Update</string>
+    <string name="app_update_dialog_cancel">Cancel</string>
 </resources>

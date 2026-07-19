@@ -38,7 +38,8 @@ Hooshmand/
 ├── core/
 │   ├── navigation/               # Shared Navigation 3 state & Navigator
 │   ├── model/                    # Shared domain models (changelog, etc.)
-│   └── network/                  # HTTP clients & network DTOs
+│   ├── network/                  # HTTP clients & network DTOs
+│   └── data/                     # Repositories mapping network → domain
 ├── feature/
 │   └── home/
 │       ├── api/                  # Home feature public contract (NavKey)
@@ -60,6 +61,7 @@ Hooshmand/
 | `:core:navigation` | `NavigationState`, `Navigator`, back-stack helpers for Navigation 3 | [READMEnavigation.md](core/navigation/READMEnavigation.md) |
 | `:core:model` | Shared domain models (e.g. changelog / version info) | [READMEmodel.md](core/model/READMEmodel.md) |
 | `:core:network` | HTTP clients and network DTOs (GitHub Contents API) | [READMEnetwork.md](core/network/READMEnetwork.md) |
+| `:core:data` | Repositories mapping network responses to domain models | [READMEdata.md](core/data/READMEdata.md) |
 | `:feature:home:api` | Home feature navigation key (`HomeNavKey`) | [READMEapi.md](feature/home/api/READMEapi.md) |
 | `:feature:home:impl` | Home screen UI and `homeEntry` registration | [READMEimpl.md](feature/home/impl/READMEimpl.md) |
 

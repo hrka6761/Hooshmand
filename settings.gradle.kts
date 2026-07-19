@@ -28,6 +28,7 @@ include(":core:datastore")
 include(":core:llm_runtime")
 include(":core:model")
 include(":core:network")
+include(":core:data")
 
 include(":feature:home:api")
 include(":feature:home:impl")

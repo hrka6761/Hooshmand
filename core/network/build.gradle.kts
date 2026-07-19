@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.hrka.android.library)
     alias(libs.plugins.jetbrains.kotlin.serialization)
+    alias(libs.plugins.hrka.android.hilt)
 }
 
 android {

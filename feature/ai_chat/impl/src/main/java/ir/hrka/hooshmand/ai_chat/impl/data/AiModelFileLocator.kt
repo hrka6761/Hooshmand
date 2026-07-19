@@ -43,6 +43,32 @@ class AiModelFileLocator @Inject constructor(
     }
 
     /**
+     * Whether [absolutePath] is under the shared public Downloads tree used for public models.
+     *
+     * @param absolutePath Absolute filesystem path to check.
+     * @return `true` when the path is inside public Downloads.
+     */
+    fun isUnderPublicStorage(absolutePath: String): Boolean {
+        if (absolutePath.isBlank()) return false
+        val publicBase =
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        return absolutePath.startsWith(publicBase.absolutePath)
+    }
+
+    /**
+     * Whether reading [absolutePath] requires all-files access that is not currently granted.
+     *
+     * Public Downloads models can be detected via [File] APIs even when
+     * [Environment.isExternalStorageManager] is false, but loading them for inference still
+     * needs that permission.
+     *
+     * @param absolutePath Absolute filesystem path of the model file.
+     * @return `true` when the path is public and manage-all-files access is missing.
+     */
+    fun requiresPublicStoragePermission(absolutePath: String): Boolean =
+        isUnderPublicStorage(absolutePath) && !Environment.isExternalStorageManager()
+
+    /**
      * Whether an existing file at the download target should be overwritten instead of appended.
      *
      * Partial downloads with the correct type can resume via append; invalid type or oversized

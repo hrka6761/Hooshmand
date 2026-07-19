@@ -77,15 +77,40 @@ class AiChatViewModel @Inject constructor(
      */
     fun refreshModelStatus() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isCheckingModel = true, errorMessage = null) }
+            _uiState.update {
+                it.copy(
+                    isCheckingModel = true,
+                    needsPublicStoragePermission = false,
+                    errorMessage = null,
+                )
+            }
             val isReady = preferencesRepository.isModelReady()
             if (isReady) {
+                val modelPath = preferencesRepository.getModelFilePath()
+                if (modelFileLocator.requiresPublicStoragePermission(modelPath)) {
+                    stopDownloadObservation()
+                    _uiState.update {
+                        it.copy(
+                            isCheckingModel = false,
+                            isModelReady = false,
+                            showDownloadDialog = false,
+                            needsPublicStoragePermission = true,
+                            selectedStorageLocation = DownloadStorageLocation.Public,
+                            isDownloading = false,
+                            isPaused = false,
+                            downloadProgress = null,
+                        )
+                    }
+                    return@launch
+                }
+
                 stopDownloadObservation()
                 _uiState.update {
                     it.copy(
                         isCheckingModel = false,
                         isModelReady = true,
                         showDownloadDialog = false,
+                        needsPublicStoragePermission = false,
                         isDownloading = false,
                         isPaused = false,
                         downloadProgress = null,
@@ -104,6 +129,7 @@ class AiChatViewModel @Inject constructor(
                     isCheckingModel = false,
                     isModelReady = false,
                     showDownloadDialog = true,
+                    needsPublicStoragePermission = false,
                     isDownloading = isActive,
                     downloadProgress =
                         if (isActive) {
@@ -117,6 +143,33 @@ class AiChatViewModel @Inject constructor(
                         },
                 )
             }
+        }
+    }
+
+    /**
+     * Called after the user grants all-files access for a public-storage model.
+     *
+     * Re-runs [refreshModelStatus] so the runtime can initialize.
+     */
+    fun onPublicStoragePermissionGranted() {
+        refreshModelStatus()
+    }
+
+    /**
+     * Called when the user denies all-files access for an existing public-storage model.
+     *
+     * Falls back to the download dialog so the model can be saved to internal storage instead.
+     *
+     * @param message User-visible permission error text.
+     */
+    fun onPublicStoragePermissionDenied(message: String) {
+        _uiState.update {
+            it.copy(
+                needsPublicStoragePermission = false,
+                showDownloadDialog = true,
+                selectedStorageLocation = DownloadStorageLocation.Internal,
+                errorMessage = message,
+            )
         }
     }
 

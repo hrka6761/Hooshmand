@@ -27,6 +27,7 @@ import ir.hrka.download.manager.DownloadStorageLocation
 import ir.hrka.hooshmand.ai_chat.impl.ui.AiChatPanel
 import ir.hrka.hooshmand.ai_chat.impl.ui.AiChatSettingsDialog
 import ir.hrka.hooshmand.ai_chat.impl.ui.ModelDownloadDialog
+import ir.hrka.hooshmand.ai_chat.impl.ui.PublicStoragePermissionDialog
 
 /**
  * AI chat feature entry screen.
@@ -53,6 +54,8 @@ fun AiChatScreen(
         onPauseDownload = viewModel::pauseModelDownload,
         onResumeDownload = viewModel::resumeModelDownload,
         onPermissionDenied = viewModel::onDownloadPermissionDenied,
+        onPublicStoragePermissionGranted = viewModel::onPublicStoragePermissionGranted,
+        onPublicStoragePermissionDenied = viewModel::onPublicStoragePermissionDenied,
         onClearError = viewModel::clearError,
         onCancel = {
             if (uiState.isDownloading) {
@@ -81,6 +84,10 @@ fun AiChatScreen(
  * @param onResumeDownload Called to resume a paused download.
  * @param onCancel Called to cancel download or leave the screen.
  * @param onPermissionDenied Called when a required download permission is denied.
+ * @param onPublicStoragePermissionGranted Called after all-files access is granted for an
+ * existing public-storage model.
+ * @param onPublicStoragePermissionDenied Called when all-files access is denied for an
+ * existing public-storage model.
  * @param onClearError Called to clear a download error message.
  * @param onInputTextChanged Called when the chat input text changes.
  * @param onSendMessage Called when the user taps Send.
@@ -101,6 +108,8 @@ internal fun AiChatScreenContent(
     onResumeDownload: () -> Unit,
     onCancel: () -> Unit,
     onPermissionDenied: (String) -> Unit = {},
+    onPublicStoragePermissionGranted: () -> Unit = {},
+    onPublicStoragePermissionDenied: (String) -> Unit = {},
     onClearError: () -> Unit = {},
     onInputTextChanged: (String) -> Unit = {},
     onSendMessage: () -> Unit = {},
@@ -168,6 +177,14 @@ internal fun AiChatScreenContent(
                         onSendMessage = onSendMessage,
                         onStopGeneration = onStopGeneration,
                         modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                uiState.needsPublicStoragePermission -> {
+                    PublicStoragePermissionDialog(
+                        onPermissionGranted = onPublicStoragePermissionGranted,
+                        onPermissionDenied = onPublicStoragePermissionDenied,
+                        onCancel = onCancel,
                     )
                 }
 

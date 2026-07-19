@@ -32,6 +32,8 @@ data class ModelDownloadProgress(
  * @property isCheckingModel `true` while verifying that a valid model file exists.
  * @property isModelReady `true` when a complete model file is available for inference.
  * @property showDownloadDialog `true` when the download dialog should be visible.
+ * @property needsPublicStoragePermission `true` when a public-storage model was found but
+ * all-files access has not been granted yet.
  * @property selectedStorageLocation Storage target chosen in the download dialog.
  * @property isDownloading `true` while a model download job is active or paused.
  * @property isPaused `true` when the active download is paused.
@@ -49,6 +51,7 @@ data class AiChatUiState(
     val isCheckingModel: Boolean = true,
     val isModelReady: Boolean = false,
     val showDownloadDialog: Boolean = false,
+    val needsPublicStoragePermission: Boolean = false,
     val selectedStorageLocation: DownloadStorageLocation = DownloadStorageLocation.Public,
     val isDownloading: Boolean = false,
     val isPaused: Boolean = false,

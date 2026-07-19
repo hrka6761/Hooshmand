@@ -21,13 +21,16 @@ import ir.hrka.llm.runtime.api.LlmRuntimeFactory
 import ir.hrka.llm.runtime.api.LlmRuntimeState
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 /**
  * ViewModel for the AI chat screen.
@@ -469,13 +472,15 @@ class AiChatViewModel @Inject constructor(
         activeDownloadManager = null
         generationJob?.cancel()
         generationJob = null
+        // Cancel in-flight model load so leaving the screen does not keep initializing.
         initializeJob?.cancel()
         initializeJob = null
-        llmRuntime?.stopGeneration()
         val runtime = llmRuntime
         llmRuntime = null
         if (runtime != null) {
-            runBlocking {
+            // Do not runBlocking on the main thread: close() can wait on native init.
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                runCatching { runtime.stopGeneration() }
                 runCatching { runtime.close() }
             }
         }
@@ -515,6 +520,9 @@ class AiChatViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(isModelInitializing = false, runtimeErrorMessage = null)
                     }
+                } catch (cancelled: CancellationException) {
+                    // ViewModel was cleared (or a newer init replaced this job).
+                    throw cancelled
                 } catch (error: Exception) {
                     _uiState.update {
                         it.copy(

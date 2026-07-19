@@ -75,25 +75,62 @@ internal class LiteRtLlmRuntime(
 
             currentState = LlmRuntimeState.INITIALIZING
             releaseEngineLocked()
+        }
 
-            try {
+        // Release [mutex] during native load so ViewModel.onCleared can cancel/close without
+        // deadlocking the main thread.
+        var loadedEngine: Engine? = null
+        var loadedConversation: Conversation? = null
+        try {
+            val loaded =
                 withContext(Dispatchers.IO) {
                     createEngineAndConversation(config)
                 }
+            loadedEngine = loaded.engine
+            loadedConversation = loaded.conversation
+
+            mutex.withLock {
+                if (currentState == LlmRuntimeState.CLOSED) {
+                    releaseEngineResources(loaded.conversation, loaded.engine)
+                    return
+                }
+                releaseEngineLocked()
+                engine = loaded.engine
+                conversation = loaded.conversation
                 activeConfig = config
                 currentState = LlmRuntimeState.READY
-            } catch (e: LlmRuntimeException) {
-                currentState = LlmRuntimeState.IDLE
-                releaseEngineLocked()
-                throw e
-            } catch (e: Exception) {
-                currentState = LlmRuntimeState.IDLE
-                releaseEngineLocked()
-                throw LlmInitializationException(
-                    message = sanitizeErrorMessage(e.message ?: "Unknown initialization error"),
-                    cause = e,
-                )
+                loadedEngine = null
+                loadedConversation = null
             }
+        } catch (e: CancellationException) {
+            releaseEngineResources(loadedConversation, loadedEngine)
+            mutex.withLock {
+                if (currentState == LlmRuntimeState.INITIALIZING) {
+                    currentState = LlmRuntimeState.IDLE
+                }
+            }
+            throw e
+        } catch (e: LlmRuntimeException) {
+            releaseEngineResources(loadedConversation, loadedEngine)
+            mutex.withLock {
+                if (currentState == LlmRuntimeState.INITIALIZING) {
+                    currentState = LlmRuntimeState.IDLE
+                }
+                releaseEngineLocked()
+            }
+            throw e
+        } catch (e: Exception) {
+            releaseEngineResources(loadedConversation, loadedEngine)
+            mutex.withLock {
+                if (currentState == LlmRuntimeState.INITIALIZING) {
+                    currentState = LlmRuntimeState.IDLE
+                }
+                releaseEngineLocked()
+            }
+            throw LlmInitializationException(
+                message = sanitizeErrorMessage(e.message ?: "Unknown initialization error"),
+                cause = e,
+            )
         }
     }
 
@@ -265,7 +302,7 @@ internal class LiteRtLlmRuntime(
     }
 
     @OptIn(ExperimentalApi::class)
-    private fun createEngineAndConversation(config: LlmRuntimeConfig) {
+    private fun createEngineAndConversation(config: LlmRuntimeConfig): LoadedRuntime {
         val nativeLibraryDir = appContext.applicationInfo.nativeLibraryDir
         val textBackend = config.accelerator.toBackend(nativeLibraryDir)
         val visionBackend =
@@ -314,8 +351,7 @@ internal class LiteRtLlmRuntime(
                 ),
             )
 
-        engine = newEngine
-        conversation = newConversation
+        return LoadedRuntime(engine = newEngine, conversation = newConversation)
     }
 
     @OptIn(ExperimentalApi::class)
@@ -344,22 +380,32 @@ internal class LiteRtLlmRuntime(
     }
 
     private fun releaseEngineLocked() {
+        releaseEngineResources(conversation, engine)
+        conversation = null
+        engine = null
+    }
+
+    private fun releaseEngineResources(
+        conversationToClose: Conversation?,
+        engineToClose: Engine?,
+    ) {
         try {
-            conversation?.close()
+            conversationToClose?.close()
         } catch (_: Exception) {
             // Best-effort cleanup.
-        } finally {
-            conversation = null
         }
 
         try {
-            engine?.close()
+            engineToClose?.close()
         } catch (_: Exception) {
             // Best-effort cleanup.
-        } finally {
-            engine = null
         }
     }
+
+    private data class LoadedRuntime(
+        val engine: Engine,
+        val conversation: Conversation,
+    )
 
     private fun ensureNotClosed() {
         if (currentState == LlmRuntimeState.CLOSED) {

@@ -36,7 +36,9 @@ Hooshmand/
 ├── build-logic/                  # Included build — Gradle convention plugins
 │   └── convention/
 ├── core/
-│   └── navigation/               # Shared Navigation 3 state & Navigator
+│   ├── navigation/               # Shared Navigation 3 state & Navigator
+│   ├── model/                    # Shared domain models (changelog, etc.)
+│   └── network/                  # HTTP clients & network DTOs
 ├── feature/
 │   └── home/
 │       ├── api/                  # Home feature public contract (NavKey)
@@ -56,6 +58,8 @@ Hooshmand/
 | `:app` | APK entry point, `MainActivity`, global theme, composes feature entry providers | [READMEapp.md](app/READMEapp.md) |
 | `:build-logic:convention` | Shared Gradle plugins (Android, Compose, Hilt, flavors, feature conventions) | [READMEbuild-logic.md](build-logic/READMEbuild-logic.md) |
 | `:core:navigation` | `NavigationState`, `Navigator`, back-stack helpers for Navigation 3 | [READMEnavigation.md](core/navigation/READMEnavigation.md) |
+| `:core:model` | Shared domain models (e.g. changelog / version info) | [READMEmodel.md](core/model/READMEmodel.md) |
+| `:core:network` | HTTP clients and network DTOs (GitHub Contents API) | [READMEnetwork.md](core/network/READMEnetwork.md) |
 | `:feature:home:api` | Home feature navigation key (`HomeNavKey`) | [READMEapi.md](feature/home/api/READMEapi.md) |
 | `:feature:home:impl` | Home screen UI and `homeEntry` registration | [READMEimpl.md](feature/home/impl/READMEimpl.md) |
 

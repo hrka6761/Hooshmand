@@ -26,6 +26,8 @@ include(":core:navigation")
 include(":core:download_manager")
 include(":core:datastore")
 include(":core:llm_runtime")
+include(":core:model")
+include(":core:network")
 
 include(":feature:home:api")
 include(":feature:home:impl")

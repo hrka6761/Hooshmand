@@ -29,6 +29,7 @@ include(":core:llm_runtime")
 include(":core:model")
 include(":core:network")
 include(":core:data")
+include(":core:domain")
 
 include(":feature:home:api")
 include(":feature:home:impl")

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -15,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -33,22 +35,30 @@ import ir.hrka.hooshmand.ai_chat.impl.ui.PublicStoragePermissionDialog
  * AI chat feature entry screen.
  *
  * Shows the model download gate until a valid model file is ready, then the chat panel.
+ *
+ * @param conversationId Conversation to load or create.
+ * @param onNavigateBack Called when the user leaves the screen (or cancels download gate).
  * @param modifier Optional [Modifier] for the root layout.
- * @param onNavigateHome Called when the user leaves before a download starts.
  * @param viewModel Screen ViewModel that owns download and chat/runtime state.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiChatScreen(
+    conversationId: String,
+    onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
-    onNavigateHome: () -> Unit,
     viewModel: AiChatViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    LaunchedEffect(conversationId) {
+        viewModel.bindConversation(conversationId)
+    }
+
     AiChatScreenContent(
         uiState = uiState,
         modifier = modifier,
+        onNavigateBack = onNavigateBack,
         onStorageLocationSelected = viewModel::onStorageLocationSelected,
         onStartDownload = viewModel::startModelDownload,
         onPauseDownload = viewModel::pauseModelDownload,
@@ -61,7 +71,7 @@ fun AiChatScreen(
             if (uiState.isDownloading) {
                 viewModel.cancelModelDownload()
             } else {
-                onNavigateHome()
+                onNavigateBack()
             }
         },
         onInputTextChanged = viewModel::onInputTextChanged,
@@ -78,6 +88,7 @@ fun AiChatScreen(
  * Stateless AI chat screen content used by [AiChatScreen] and Compose previews.
  *
  * @param uiState Full screen state (download gate + chat).
+ * @param onNavigateBack Called when the top-bar back action is tapped.
  * @param onStorageLocationSelected Called when the download storage option changes.
  * @param onStartDownload Called to begin or resume a model download from the dialog.
  * @param onPauseDownload Called to pause an active download.
@@ -96,12 +107,13 @@ fun AiChatScreen(
  * @param onDismissSettings Called when the settings dialog is dismissed.
  * @param onConfirmSettings Called when the user confirms new [AiChatModelSettings].
  * @param onClearConversation Called when the user clears the chat history.
- * @param modifier Optional [Modifier] for the root layout.
+ * @param modifier Optional [modifier] for the root layout.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AiChatScreenContent(
     uiState: AiChatUiState,
+    onNavigateBack: () -> Unit = {},
     onStorageLocationSelected: (DownloadStorageLocation) -> Unit,
     onStartDownload: () -> Unit,
     onPauseDownload: () -> Unit,
@@ -129,6 +141,14 @@ internal fun AiChatScreenContent(
                         text = stringResource(R.string.ai_chat_title),
                         fontWeight = FontWeight.Bold,
                     )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.ai_chat_back_cd),
+                        )
+                    }
                 },
                 actions = {
                     if (uiState.isModelReady) {

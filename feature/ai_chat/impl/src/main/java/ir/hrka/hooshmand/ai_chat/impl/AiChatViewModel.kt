@@ -14,6 +14,8 @@ import ir.hrka.download.manager.api.DownloadProgressObserver
 import ir.hrka.hooshmand.ai_chat.impl.data.AiModelFileLocator
 import ir.hrka.hooshmand.ai_chat.impl.data.AiModelPreferencesRepository
 import ir.hrka.hooshmand.ai_chat.impl.download.toMultipartDownloadData
+import ir.hrka.hooshmand.data.repository.ChatHistoryRepository
+import ir.hrka.hooshmand.model.Conversation
 import ir.hrka.llm.runtime.api.LlmGenerationEvent
 import ir.hrka.llm.runtime.api.LlmInferenceRequest
 import ir.hrka.llm.runtime.api.LlmRuntime
@@ -29,6 +31,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -36,18 +39,20 @@ import kotlinx.coroutines.launch
  * ViewModel for the AI chat screen.
  *
  * Owns model-download orchestration and on-device chat via [LlmRuntime]: initialize when the
- * model file is ready, stream replies into [AiChatUiState.messages], and apply settings from
- * the config dialog.
+ * model file is ready, stream replies into [AiChatUiState.messages], persist completed turns
+ * through [ChatHistoryRepository], and apply settings from the config dialog.
  *
  * @property appContext Application context used for downloads and [LlmRuntimeFactory].
  * @property preferencesRepository Persists and resolves the downloaded model path.
  * @property modelFileLocator Locates/validates model files and download targets.
+ * @property chatHistoryRepository Local conversation and message persistence.
  */
 @HiltViewModel
 class AiChatViewModel @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val preferencesRepository: AiModelPreferencesRepository,
     private val modelFileLocator: AiModelFileLocator,
+    private val chatHistoryRepository: ChatHistoryRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AiChatUiState())
@@ -65,12 +70,38 @@ class AiChatViewModel @Inject constructor(
     private var llmRuntime: LlmRuntime? = null
     private var generationJob: Job? = null
     private var initializeJob: Job? = null
+    private var conversationId: String? = null
 
     init {
         viewModelScope.launch {
             val storedSettings = preferencesRepository.getModelSettings()
             _uiState.update { it.copy(modelSettings = storedSettings) }
             refreshModelStatus()
+        }
+    }
+
+    /**
+     * Binds this screen to a conversation and loads any saved messages.
+     *
+     * Safe to call once per navigation entry. Does not overwrite in-memory messages if the
+     * user already started chatting before the load finished.
+     *
+     * @param conversationId Stable conversation id from [ir.hrka.hooshmand.ai_chat.api.AiChatNavKey].
+     */
+    fun bindConversation(conversationId: String) {
+        if (this.conversationId == conversationId) return
+        this.conversationId = conversationId
+        viewModelScope.launch {
+            val storedMessages =
+                chatHistoryRepository.observeMessages(conversationId).first()
+                    .map { it.toUiMessage() }
+            _uiState.update { state ->
+                if (state.messages.isNotEmpty()) {
+                    state
+                } else {
+                    state.copy(messages = storedMessages)
+                }
+            }
         }
     }
 
@@ -313,11 +344,14 @@ class AiChatViewModel @Inject constructor(
             return
         }
 
+        val now = System.currentTimeMillis()
+        val isFirstMessage = _uiState.value.messages.isEmpty()
         val userMessage =
             AiChatMessage(
                 id = newMessageId(),
                 role = AiChatMessageRole.User,
                 text = prompt,
+                createdAt = now,
             )
         val modelMessageId = newMessageId()
         val modelMessage =
@@ -326,6 +360,7 @@ class AiChatViewModel @Inject constructor(
                 role = AiChatMessageRole.Model,
                 text = "",
                 isStreaming = true,
+                createdAt = now + 1,
             )
 
         _uiState.update {
@@ -334,6 +369,14 @@ class AiChatViewModel @Inject constructor(
                 isGenerating = true,
                 runtimeErrorMessage = null,
                 messages = it.messages + userMessage + modelMessage,
+            )
+        }
+
+        viewModelScope.launch {
+            persistOutgoingTurn(
+                userMessage = userMessage,
+                titleSeed = prompt,
+                isFirstMessage = isFirstMessage,
             )
         }
 
@@ -372,44 +415,59 @@ class AiChatViewModel @Inject constructor(
     }
 
     /**
-     * Stops the in-flight model generation, if any.
+     * Stops the in-flight model generation, if any, and persists any partial model reply.
      */
     fun stopGeneration() {
         llmRuntime?.stopGeneration()
         generationJob?.cancel()
         generationJob = null
+        val stoppedMessages =
+            _uiState.value.messages.map { message ->
+                if (message.isStreaming) message.copy(isStreaming = false) else message
+            }
         _uiState.update { state ->
             state.copy(
                 isGenerating = false,
-                messages =
-                    state.messages.map { message ->
-                        if (message.isStreaming) message.copy(isStreaming = false) else message
-                    },
+                messages = stoppedMessages,
             )
+        }
+        viewModelScope.launch {
+            stoppedMessages
+                .filter { it.role == AiChatMessageRole.Model && it.text.isNotBlank() }
+                .forEach { persistMessage(it) }
+            touchConversationUpdatedAt()
         }
     }
 
     /**
-     * Clears the on-screen chat history and resets the runtime conversation session.
+     * Clears on-screen messages, deletes persisted messages for this conversation, and resets
+     * the runtime session.
      *
-     * Keeps the loaded model in memory. Uses the current system instruction from
-     * [AiChatUiState.modelSettings].
+     * Keeps the conversation row and the loaded model in memory. Uses the current system
+     * instruction from [AiChatUiState.modelSettings].
      */
     fun clearConversation() {
         if (!_uiState.value.isModelReady) return
         if (_uiState.value.isModelInitializing) return
 
-        stopGeneration()
+        llmRuntime?.stopGeneration()
+        generationJob?.cancel()
+        generationJob = null
+        val id = conversationId
         _uiState.update {
             it.copy(
+                isGenerating = false,
                 messages = emptyList(),
                 inputText = "",
                 runtimeErrorMessage = null,
             )
         }
 
-        val runtime = llmRuntime ?: return
         viewModelScope.launch {
+            if (id != null) {
+                chatHistoryRepository.deleteMessagesForConversation(id)
+            }
+            val runtime = llmRuntime ?: return@launch
             runCatching {
                 runtime.resetConversation(
                     systemInstruction = _uiState.value.modelSettings.systemInstruction,
@@ -556,50 +614,127 @@ class AiChatViewModel @Inject constructor(
     }
 
     /**
-     * Marks the model message as finished streaming.
+     * Marks the model message as finished streaming and persists it.
      *
      * @param messageId Target model message id.
      */
     private fun finishModelMessage(messageId: String) {
+        var finished: AiChatMessage? = null
         _uiState.update { state ->
             state.copy(
-                messages =
-                    state.messages.map { message ->
-                        if (message.id == messageId) message.copy(isStreaming = false) else message
-                    },
-            )
-        }
-    }
-
-    /**
-     * Marks the model message as failed and records a runtime error.
-     *
-     * @param messageId Target model message id.
-     * @param errorMessage User-visible error text.
-     */
-    private fun failModelMessage(messageId: String, errorMessage: String) {
-        _uiState.update { state ->
-            state.copy(
-                runtimeErrorMessage = errorMessage,
                 messages =
                     state.messages.map { message ->
                         if (message.id == messageId) {
-                            message.copy(
-                                text = message.text.ifBlank { errorMessage },
-                                isStreaming = false,
-                                role =
-                                    if (message.text.isBlank()) {
-                                        AiChatMessageRole.Error
-                                    } else {
-                                        message.role
-                                    },
-                            )
+                            message.copy(isStreaming = false).also { finished = it }
                         } else {
                             message
                         }
                     },
             )
         }
+        val message = finished ?: return
+        viewModelScope.launch {
+            if (message.text.isNotBlank()) {
+                persistMessage(message)
+                touchConversationUpdatedAt()
+            }
+        }
+    }
+
+    /**
+     * Marks the model message as failed, records a runtime error, and persists the result.
+     *
+     * @param messageId Target model message id.
+     * @param errorMessage User-visible error text.
+     */
+    private fun failModelMessage(messageId: String, errorMessage: String) {
+        var failed: AiChatMessage? = null
+        _uiState.update { state ->
+            state.copy(
+                runtimeErrorMessage = errorMessage,
+                messages =
+                    state.messages.map { message ->
+                        if (message.id == messageId) {
+                            message
+                                .copy(
+                                    text = message.text.ifBlank { errorMessage },
+                                    isStreaming = false,
+                                    role =
+                                        if (message.text.isBlank()) {
+                                            AiChatMessageRole.Error
+                                        } else {
+                                            message.role
+                                        },
+                                )
+                                .also { failed = it }
+                        } else {
+                            message
+                        }
+                    },
+            )
+        }
+        val message = failed ?: return
+        viewModelScope.launch {
+            persistMessage(message)
+            touchConversationUpdatedAt()
+        }
+    }
+
+    /**
+     * Ensures the conversation row exists, then persists the user message.
+     *
+     * @param userMessage User turn to store.
+     * @param titleSeed Text used as the conversation title when creating a new row.
+     * @param isFirstMessage `true` when this is the first turn in an empty chat.
+     */
+    private suspend fun persistOutgoingTurn(
+        userMessage: AiChatMessage,
+        titleSeed: String,
+        isFirstMessage: Boolean,
+    ) {
+        val id = conversationId ?: return
+        val now = System.currentTimeMillis()
+        val existing = chatHistoryRepository.observeConversation(id).first()
+        val title =
+            titleSeed.take(CONVERSATION_TITLE_MAX_LENGTH).ifBlank { DEFAULT_CONVERSATION_TITLE }
+        val conversation =
+            when {
+                existing == null ->
+                    Conversation(
+                        id = id,
+                        title = if (isFirstMessage) title else DEFAULT_CONVERSATION_TITLE,
+                        createdAt = now,
+                        updatedAt = now,
+                    )
+
+                existing.title.isBlank() || existing.title == DEFAULT_CONVERSATION_TITLE ->
+                    existing.copy(title = title, updatedAt = now)
+
+                else -> existing.copy(updatedAt = now)
+            }
+        chatHistoryRepository.upsertConversation(conversation)
+        persistMessage(userMessage)
+    }
+
+    /**
+     * Bumps [Conversation.updatedAt] for the bound conversation when it exists.
+     */
+    private suspend fun touchConversationUpdatedAt() {
+        val id = conversationId ?: return
+        val existing = chatHistoryRepository.observeConversation(id).first() ?: return
+        chatHistoryRepository.upsertConversation(
+            existing.copy(updatedAt = System.currentTimeMillis()),
+        )
+    }
+
+    /**
+     * Persists a single chat message for the bound conversation.
+     *
+     * @param message UI message to store.
+     */
+    private suspend fun persistMessage(message: AiChatMessage) {
+        val id = conversationId ?: return
+        chatHistoryRepository.upsertMessage(message.toDomainMessage(id))
     }
 
     /**
@@ -608,6 +743,11 @@ class AiChatViewModel @Inject constructor(
      * @return New message id string.
      */
     private fun newMessageId(): String = UUID.randomUUID().toString()
+
+    private companion object {
+        const val CONVERSATION_TITLE_MAX_LENGTH = 60
+        const val DEFAULT_CONVERSATION_TITLE = "New chat"
+    }
 
     /**
      * Returns an existing download observer or creates one for [modelDownloadId].

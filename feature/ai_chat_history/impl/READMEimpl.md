@@ -1,6 +1,6 @@
 # Module: `:feature:ai_chat_history:impl`
 
-Implementation for the **AI Chat History** feature.
+Implementation for the **AI Chat History** feature: conversation list, delete, and navigation into chat.
 
 ---
 
@@ -26,5 +26,26 @@ namespace = "ir.hrka.hooshmand.ai_chat_history.impl"
 
 dependencies {
     implementation(projects.feature.aiChatHistory.api)
+    implementation(projects.feature.aiChat.api)
+    implementation(projects.core.data)
 }
+```
+
+---
+
+## Contents
+
+| Type | Role |
+|------|------|
+| `AiChatHistoryScreen` | History list UI + delete confirmation |
+| `AiChatHistoryViewModel` | Observes / deletes conversations via `ChatHistoryRepository` |
+| `aiChatHistoryEntry` | Nav entry: row → chat, FAB → new chat |
+
+---
+
+## Navigation flow
+
+```
+Home → AiChatHistory → AiChat(conversationId)
+                     → (FAB) AiChat(new UUID)
 ```

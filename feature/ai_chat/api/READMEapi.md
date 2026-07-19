@@ -47,10 +47,11 @@ feature/ai_chat/api/src/main/java/ir/hrka/hooshmand/ai_chat/api/
 
 ```kotlin
 @Serializable
-object AiChatNavKey : NavKey
+data class AiChatNavKey(val conversationId: String) : NavKey
 ```
 
 - Serializable navigation key for Navigation 3 (process death / saveable stacks).
+- `conversationId` identifies which conversation to open or create.
 
 ---
 
@@ -58,7 +59,7 @@ object AiChatNavKey : NavKey
 
 | Module | Usage |
 |--------|-------|
-| `:app` | Navigation to AI Chat |
+| `:feature:ai_chat_history:impl` | Opens chat with a conversation id (list row / New Chat) |
 | `:feature:ai_chat:impl` | `entry<AiChatNavKey>` in `aiChatEntry` |
 
 ---
@@ -75,4 +76,4 @@ Keep Composables, ViewModels, and Hilt modules in `:feature:ai_chat:impl`.
 
 ---
 
-*Last updated: AiChatNavKey as sole public type.*
+*Last updated: AiChatNavKey carries conversationId.*

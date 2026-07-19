@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="top_bar_title_txt">AI Chat History</string>
+    <string name="back_cd">Back</string>
+    <string name="new_chat_fab">New Chat</string>
+    <string name="empty_history_message">No conversations yet. Start a new chat.</string>
+    <string name="untitled_conversation">Untitled chat</string>
+    <string name="delete_conversation_cd">Delete conversation</string>
+    <string name="delete_conversation_title">Delete conversation?</string>
+    <string name="delete_conversation_message">This removes the conversation and all of its messages.</string>
+    <string name="delete_conversation_confirm">Delete</string>
+    <string name="delete_conversation_cancel">Cancel</string>
 </resources>

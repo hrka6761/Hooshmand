@@ -2,6 +2,7 @@
 <resources>
     <string name="ai_chat_title">AI Chat</string>
     <string name="ai_chat_ready_message">Model is ready. Chat UI will be available here.</string>
+    <string name="ai_chat_back_cd">Back</string>
     <string name="ai_chat_settings_cd">Model settings</string>
     <string name="ai_chat_clear_conversation_cd">Clear conversation</string>
 

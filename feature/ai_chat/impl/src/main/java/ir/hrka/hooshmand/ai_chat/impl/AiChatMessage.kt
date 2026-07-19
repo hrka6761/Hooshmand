@@ -10,12 +10,14 @@ package ir.hrka.hooshmand.ai_chat.impl
  * @property role Sender or message kind (user, model, or error).
  * @property text Visible message body.
  * @property isStreaming `true` while the model is still appending tokens to [text].
+ * @property createdAt Epoch millis when the message was created (for persistence order).
  */
 data class AiChatMessage(
     val id: String,
     val role: AiChatMessageRole,
     val text: String,
     val isStreaming: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 /**

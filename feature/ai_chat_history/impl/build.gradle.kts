@@ -12,4 +12,6 @@ android {
 
 dependencies {
     implementation(projects.feature.aiChatHistory.api)
+    implementation(projects.feature.aiChat.api)
+    implementation(projects.core.data)
 }

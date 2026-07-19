@@ -1,6 +1,5 @@
 package ir.hrka.hooshmand.home.impl
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,7 +35,7 @@ import com.airbnb.lottie.compose.rememberLottieComposition
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
-    navigateToAiChat: () -> Unit
+    navigateToAiChatHistory: () -> Unit,
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -58,7 +57,7 @@ fun HomeScreen(
         ) {
             OfflineAIChatCard(
                 modifier = Modifier,
-                navigateToAiChat = navigateToAiChat
+                navigateToAiChatHistory = navigateToAiChatHistory,
             )
         }
     }
@@ -67,12 +66,12 @@ fun HomeScreen(
 @Composable
 fun OfflineAIChatCard(
     modifier: Modifier = Modifier,
-    navigateToAiChat: () -> Unit
+    navigateToAiChatHistory: () -> Unit,
 ) {
     val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.ai_chat_animation))
 
     Button(
-        onClick = navigateToAiChat,
+        onClick = navigateToAiChatHistory,
         modifier = modifier
             .fillMaxWidth()
             .padding(8.dp),
@@ -118,6 +117,6 @@ fun OfflineAIChatCard(
 fun HomeScreenPreview(modifier: Modifier = Modifier) {
     HomeScreen(
         modifier = modifier,
-        navigateToAiChat = {}
+        navigateToAiChatHistory = {},
     )
 }

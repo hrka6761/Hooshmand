@@ -46,6 +46,7 @@ alias(libs.plugins.hrka.android.flavors)
 | Module / library | Purpose |
 |------------------|---------|
 | `:core:navigation` | Navigation state and navigator |
+| `:core:domain` | App update check use case (startup) |
 | `:feature:home:api` | Home nav key (for start destination) |
 | `:feature:home:impl` | Home screen entry provider |
 | `androidx.navigation3:navigation3-ui` | `NavDisplay`, `entryProvider` |
@@ -60,7 +61,8 @@ alias(libs.plugins.hrka.android.flavors)
 app/src/main/
 ├── AndroidManifest.xml
 ├── java/ir/hrka/hooshmand/
-│   ├── MainActivity.kt          # Activity entry; nav state bootstrap
+│   ├── MainActivity.kt          # Activity entry; splash + nav bootstrap
+│   ├── MainActivityViewModel.kt # Startup update check for splash keep condition
 │   ├── HooshmandApp.kt          # Root composable; NavDisplay + entry providers
 │   ├── core/
 │   │   └── Utils.kt             # App-wide CompositionLocals (e.g. Snackbar)
@@ -79,6 +81,7 @@ app/src/main/
 | Class / function | File | Responsibility |
 |------------------|------|----------------|
 | `MainActivity` | `MainActivity.kt` | SplashScreen + edge-to-edge Activity; initializes nav with `HomeNavKey` |
+| `MainActivityViewModel` | `MainActivityViewModel.kt` | Runs `CheckAppUpdateUseCase`; drives `setKeepOnScreenCondition` |
 | `HooshmandApp` | `HooshmandApp.kt` | Scaffold + `NavDisplay`; wires `homeEntry(navigator)` |
 | `HooshmandTheme` | `ui/theme/Theme.kt` | Material 3 theme (dynamic color on API 31+) |
 | `LocalSnackbarHostState` | `core/Utils.kt` | CompositionLocal for global snackbars |

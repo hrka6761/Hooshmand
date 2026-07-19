@@ -27,6 +27,7 @@ dependencies {
     implementation(projects.core.navigation)
     implementation(projects.core.downloadManager)
     implementation(projects.core.datastore)
+    implementation(projects.core.domain)
 
     implementation(libs.androidx.work.runtime.ktx)
 

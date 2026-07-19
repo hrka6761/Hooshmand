@@ -15,9 +15,12 @@ import ir.hrka.hooshmand.domain.AppUpdateStatus
 /**
  * Dialog prompting the user to update the app from Cafe Bazaar.
  *
+ * Shown as a separate window above the AndroidX splash while the splash is kept on-screen.
+ *
  * @param isMandatory `true` for a forced update; back/outside dismiss is disabled.
  * @param onUpdateClick Opens the Cafe Bazaar listing.
  * @param onCancelClick Continues to home (optional) or closes the app (mandatory).
+ * @param modifier Optional [Modifier] for the dialog.
  */
 @Composable
 fun AppUpdateDialog(

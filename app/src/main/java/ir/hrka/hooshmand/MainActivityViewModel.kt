@@ -4,7 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.hrka.hooshmand.MainActivityUiState.CheckingUpdate
-import ir.hrka.hooshmand.MainActivityUiState.Ready
+import ir.hrka.hooshmand.MainActivityUiState.ContentReady
+import ir.hrka.hooshmand.MainActivityUiState.UpdateRequired
 import ir.hrka.hooshmand.domain.AppUpdateStatus
 import ir.hrka.hooshmand.domain.CheckAppUpdateUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +17,8 @@ import javax.inject.Inject
 /**
  * Holds startup state for [MainActivity], including the remote app-update check.
  *
- * While [uiState] is [CheckingUpdate], the system splash screen stays on-screen.
+ * The system splash stays on-screen for [CheckingUpdate] and [UpdateRequired] (with the update
+ * dialog above it). Home content is only shown in [ContentReady].
  */
 @HiltViewModel
 class MainActivityViewModel @Inject constructor(
@@ -26,8 +28,8 @@ class MainActivityViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<MainActivityUiState>(CheckingUpdate)
 
     /**
-     * Startup UI state. Starts as [CheckingUpdate], then becomes [Ready] with an
-     * [AppUpdateStatus] (or [AppUpdateStatus.NoUpdate] if the check fails).
+     * Startup UI state. Starts as [CheckingUpdate], then becomes [UpdateRequired] or
+     * [ContentReady] (or [ContentReady] with no update if the check fails).
      */
     val uiState: StateFlow<MainActivityUiState> = _uiState.asStateFlow()
 
@@ -36,23 +38,33 @@ class MainActivityViewModel @Inject constructor(
             val status = runCatching {
                 checkAppUpdateUseCase(BuildConfig.VERSION_CODE)
             }.getOrDefault(AppUpdateStatus.NoUpdate)
-            _uiState.value = Ready(status)
+
+            _uiState.value =
+                when (status) {
+                    AppUpdateStatus.NoUpdate -> ContentReady
+                    is AppUpdateStatus.OptionalUpdate,
+                    is AppUpdateStatus.MandatoryUpdate,
+                    -> UpdateRequired(status)
+                }
         }
     }
 
     /**
-     * Dismisses an optional update dialog so the user can continue using the app.
+     * Dismisses an optional update dialog and continues into the app (home).
      */
     fun dismissOptionalUpdate() {
         val current = _uiState.value
-        if (current is Ready && current.updateStatus is AppUpdateStatus.OptionalUpdate) {
-            _uiState.value = Ready(AppUpdateStatus.NoUpdate)
+        if (current is UpdateRequired &&
+            current.updateStatus is AppUpdateStatus.OptionalUpdate
+        ) {
+            _uiState.value = ContentReady
         }
     }
 }
 
 /**
- * Startup state used to drive the splash keep-on-screen condition and update dialogs.
+ * Startup state used to drive the splash keep-on-screen condition, update dialogs, and
+ * whether home content may be shown.
  */
 sealed interface MainActivityUiState {
 
@@ -60,16 +72,18 @@ sealed interface MainActivityUiState {
     data object CheckingUpdate : MainActivityUiState
 
     /**
-     * Update check finished.
+     * Update check finished and an update dialog must be shown before home.
      *
-     * @property updateStatus Result used by update dialogs after the splash dismisses.
+     * @property updateStatus Optional or mandatory update result.
      */
-    data class Ready(
+    data class UpdateRequired(
         val updateStatus: AppUpdateStatus,
     ) : MainActivityUiState
 
     /**
-     * Whether the AndroidX splash screen should remain on-screen.
+     * User may use the app; show home navigation content.
+     *
+     * Reached when there is no update, or after dismissing an optional update.
      */
-    fun shouldKeepSplashScreen(): Boolean = this is CheckingUpdate
+    data object ContentReady : MainActivityUiState
 }

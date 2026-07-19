@@ -6,9 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.collectAsState
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dagger.hilt.android.AndroidEntryPoint
@@ -17,59 +18,77 @@ import ir.hrka.hooshmand.navigation.Navigator
 import ir.hrka.hooshmand.navigation.rememberNavigationState
 import ir.hrka.hooshmand.ui.AppUpdateDialog
 import ir.hrka.hooshmand.ui.isMandatoryUpdate
-import ir.hrka.hooshmand.ui.shouldShowUpdateDialog
 import ir.hrka.hooshmand.ui.theme.HooshmandTheme
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Single-activity entry point.
  *
- * Installs the AndroidX splash screen and keeps it on-screen until
- * [MainActivityViewModel] finishes the remote update check, then shows an update
- * dialog when needed.
+ * Keeps the AndroidX splash on-screen during the update check and while an update dialog is
+ * shown (the dialog window appears above the splash). Home is composed only in
+ * [MainActivityUiState.ContentReady].
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainActivityViewModel by viewModels()
 
+    /**
+     * Splash keep flag for [SplashScreen.setKeepOnScreenCondition].
+     *
+     * `true` for [MainActivityUiState.CheckingUpdate] and
+     * [MainActivityUiState.UpdateRequired]; `false` only for
+     * [MainActivityUiState.ContentReady].
+     */
+    private val keepSplashOnScreen = AtomicBoolean(true)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
 
         splashScreen.setKeepOnScreenCondition {
-            viewModel.uiState.value.shouldKeepSplashScreen()
+            keepSplashOnScreen.get()
         }
 
         enableEdgeToEdge()
         setContent {
             HooshmandTheme {
-                val navigationState = rememberNavigationState(
-                    HomeNavKey,
-                    setOf(HomeNavKey),
-                )
-                val navigator = remember { Navigator(navigationState) }
                 val uiState by viewModel.uiState.collectAsState()
 
-                HooshmandApp(
-                    navigationState = navigationState,
-                    navigator = navigator,
-                )
+                SideEffect {
+                    // Keep splash under the update dialog; dismiss only when entering the app.
+                    keepSplashOnScreen.set(uiState !is MainActivityUiState.ContentReady)
+                }
 
-                val readyState = uiState as? MainActivityUiState.Ready
-                val updateStatus = readyState?.updateStatus
-                if (updateStatus != null && updateStatus.shouldShowUpdateDialog()) {
-                    val isMandatory = updateStatus.isMandatoryUpdate()
-                    AppUpdateDialog(
-                        isMandatory = isMandatory,
-                        onUpdateClick = ::openCafeBazaar,
-                        onCancelClick = {
-                            if (isMandatory) {
-                                finish()
-                            } else {
-                                viewModel.dismissOptionalUpdate()
-                            }
-                        },
-                    )
+                when (val state = uiState) {
+                    MainActivityUiState.CheckingUpdate -> Unit
+
+                    is MainActivityUiState.UpdateRequired -> {
+                        val isMandatory = state.updateStatus.isMandatoryUpdate()
+                        AppUpdateDialog(
+                            isMandatory = isMandatory,
+                            onUpdateClick = ::openCafeBazaar,
+                            onCancelClick = {
+                                if (isMandatory) {
+                                    finish()
+                                } else {
+                                    viewModel.dismissOptionalUpdate()
+                                }
+                            },
+                        )
+                    }
+
+                    MainActivityUiState.ContentReady -> {
+                        val navigationState = rememberNavigationState(
+                            HomeNavKey,
+                            setOf(HomeNavKey),
+                        )
+                        val navigator = remember { Navigator(navigationState) }
+                        HooshmandApp(
+                            navigationState = navigationState,
+                            navigator = navigator,
+                        )
+                    }
                 }
             }
         }

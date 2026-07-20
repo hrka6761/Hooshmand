@@ -73,4 +73,6 @@
     <string name="ai_chat_empty_hint">Ask the on-device model a question.</string>
     <string name="ai_chat_model_initializing">Loading model…</string>
     <string name="ai_chat_streaming_indicator">Generating…</string>
+    <string name="ai_chat_copy_message_cd">Copy message</string>
+    <string name="ai_chat_message_copied">Message copied</string>
 </resources>

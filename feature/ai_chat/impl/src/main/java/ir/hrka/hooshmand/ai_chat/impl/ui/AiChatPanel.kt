@@ -20,31 +20,39 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
+import android.content.ClipData
 import ir.hrka.hooshmand.ai_chat.impl.AiChatMessage
 import ir.hrka.hooshmand.ai_chat.impl.AiChatMessageRole
 import ir.hrka.hooshmand.ai_chat.impl.R
+import kotlinx.coroutines.launch
 
 /**
  * Gallery-style chat panel: scrollable message list plus a bottom text input with Send/Stop.
@@ -76,89 +84,120 @@ internal fun AiChatPanel(
     focusRequester: FocusRequester = remember { FocusRequester() },
 ) {
     val listState = rememberLazyListState()
+    val clipboard = LocalClipboard.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val messageCopiedLabel = stringResource(R.string.ai_chat_message_copied)
 
-    LaunchedEffect(messages.size, messages.lastOrNull()?.text) {
+    // reverseLayout pins index 0 to the visual bottom. When the user sends a new message while
+    // scrolled up in history, animate back to the newest item (index 0).
+    LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            listState.animateScrollToItem(0)
         }
     }
 
-    Column(
-        modifier =
-            modifier.fillMaxSize()
-    ) {
-        Box(
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-        ) {
-            when {
-                isModelInitializing && messages.isEmpty() -> {
-                    Column(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        CircularProgressIndicator()
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+            ) {
+                when {
+                    isModelInitializing && messages.isEmpty() -> {
+                        Column(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            CircularProgressIndicator()
+                            Text(
+                                text = stringResource(R.string.ai_chat_model_initializing),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    messages.isEmpty() -> {
                         Text(
-                            text = stringResource(R.string.ai_chat_model_initializing),
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = stringResource(R.string.ai_chat_empty_hint),
+                            style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier =
+                                Modifier
+                                    .align(Alignment.Center)
+                                    .padding(horizontal = 24.dp),
                         )
                     }
-                }
 
-                messages.isEmpty() -> {
-                    Text(
-                        text = stringResource(R.string.ai_chat_empty_hint),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier =
-                            Modifier
-                                .align(Alignment.Center)
-                                .padding(horizontal = 24.dp),
-                    )
-                }
-
-                else -> {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        items(
-                            items = messages,
-                            key = { it.id },
-                        ) { message ->
-                            AiChatMessageBubble(message = message)
+                    else -> {
+                        // Newest message at index 0 → visual bottom. Opening a conversation from
+                        // history therefore starts at the latest messages with no manual scroll.
+                        // Streaming growth expands upward and stays pinned to the bottom.
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            reverseLayout = true,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(
+                                items = messages.asReversed(),
+                                key = { it.id },
+                            ) { message ->
+                                AiChatMessageBubble(
+                                    message = message,
+                                    onCopyMessage = {
+                                        val text = message.text
+                                        if (text.isBlank()) return@AiChatMessageBubble
+                                        scope.launch {
+                                            clipboard.setClipEntry(
+                                                ClipEntry(
+                                                    ClipData.newPlainText("ai_chat_message", text),
+                                                ),
+                                            )
+                                            snackbarHostState.showSnackbar(messageCopiedLabel)
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
-        runtimeErrorMessage?.takeIf { it.isNotBlank() }?.let { error ->
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+            runtimeErrorMessage?.takeIf { it.isNotBlank() }?.let { error ->
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+
+            AiChatMessageInput(
+                inputText = inputText,
+                isGenerating = isGenerating,
+                enabled = !isModelInitializing,
+                onInputTextChanged = onInputTextChanged,
+                onSendMessage = onSendMessage,
+                onStopGeneration = onStopGeneration,
+                focusRequester = focusRequester,
             )
         }
 
-        AiChatMessageInput(
-            inputText = inputText,
-            isGenerating = isGenerating,
-            enabled = !isModelInitializing,
-            onInputTextChanged = onInputTextChanged,
-            onSendMessage = onSendMessage,
-            onStopGeneration = onStopGeneration,
-            focusRequester = focusRequester,
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 88.dp),
         )
     }
 }
@@ -167,12 +206,17 @@ internal fun AiChatPanel(
  * One chat bubble aligned by [AiChatMessage.role], matching Gallery user/agent placement.
  *
  * @param message Message content and role to render.
+ * @param onCopyMessage Called when the user taps the copy action for this message.
  */
 @Composable
-private fun AiChatMessageBubble(message: AiChatMessage) {
+private fun AiChatMessageBubble(
+    message: AiChatMessage,
+    onCopyMessage: () -> Unit,
+) {
     val isUser = message.role == AiChatMessageRole.User
     val isError = message.role == AiChatMessageRole.Error
     val alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
+    val horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
     val backgroundColor =
         when {
             isError -> MaterialTheme.colorScheme.errorContainer
@@ -201,56 +245,76 @@ private fun AiChatMessageBubble(message: AiChatMessage) {
                 bottomEnd = 16.dp
             )
         }
+    val canCopy = message.text.isNotBlank()
 
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = alignment,
     ) {
         Column(
-            modifier =
-                Modifier
-                    .widthIn(max = 320.dp)
-                    .clip(shape)
-                    .background(backgroundColor)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = horizontalAlignment,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            AiChatDirectionalContent(text = message.text) {
-                val isRtl = resolvesToRtl(message.text)
-                when (message.role) {
-                    AiChatMessageRole.Model -> {
-                        AiChatMarkdownText(
-                            markdown = message.text,
-                            color = contentColor,
-                        )
-                    }
+            Column(
+                modifier =
+                    Modifier
+                        .widthIn(max = 320.dp)
+                        .clip(shape)
+                        .background(backgroundColor)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                AiChatDirectionalContent(text = message.text) {
+                    val isRtl = resolvesToRtl(message.text)
+                    when (message.role) {
+                        AiChatMessageRole.Model -> {
+                            AiChatMarkdownText(
+                                markdown = message.text,
+                                color = contentColor,
+                            )
+                        }
 
-                    AiChatMessageRole.User,
-                    AiChatMessageRole.Error,
-                        -> {
-                        Text(
-                            text = message.text.ifBlank { " " },
-                            style =
-                                MaterialTheme.typography.bodyMedium.copy(
-                                    textDirection =
-                                        if (isRtl) {
-                                            TextDirection.Rtl
-                                        } else {
-                                            TextDirection.Ltr
-                                        },
-                                ),
-                            color = contentColor,
-                            textAlign = if (isRtl) TextAlign.Right else TextAlign.Left,
-                        )
+                        AiChatMessageRole.User,
+                        AiChatMessageRole.Error,
+                            -> {
+                            Text(
+                                text = message.text.ifBlank { " " },
+                                style =
+                                    MaterialTheme.typography.bodyMedium.copy(
+                                        textDirection =
+                                            if (isRtl) {
+                                                TextDirection.Rtl
+                                            } else {
+                                                TextDirection.Ltr
+                                            },
+                                    ),
+                                color = contentColor,
+                                textAlign = if (isRtl) TextAlign.Right else TextAlign.Left,
+                            )
+                        }
                     }
                 }
+                if (message.isStreaming) {
+                    Text(
+                        text = stringResource(R.string.ai_chat_streaming_indicator),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor.copy(alpha = 0.7f),
+                    )
+                }
             }
-            if (message.isStreaming) {
-                Text(
-                    text = stringResource(R.string.ai_chat_streaming_indicator),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = contentColor.copy(alpha = 0.7f),
-                )
+
+            if (canCopy) {
+                IconButton(
+                    onClick = onCopyMessage,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ContentCopy,
+                        contentDescription = stringResource(R.string.ai_chat_copy_message_cd),
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

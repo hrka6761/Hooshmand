@@ -1,5 +1,7 @@
 package ir.hrka.download.manager.api
 
+import ir.hrka.download.manager.error.DownloadError
+
 /**
  * Callback interface for observing download lifecycle events and progress.
  *
@@ -46,6 +48,18 @@ interface DownloadListener {
      * @param errorMsg Human-readable failure reason, or `null` if not provided.
      */
     fun onDownloadFailed(errorMsg: String?)
+
+    /**
+     * Called when the download fails before completion with a typed [DownloadError].
+     *
+     * Default implementation forwards [DownloadError.userMessage] to [onDownloadFailed].
+     * Override this method when you need to branch on [DownloadError.code].
+     *
+     * @param error Typed failure with a stable code and user-facing message.
+     */
+    fun onDownloadFailed(error: DownloadError) {
+        onDownloadFailed(error.userMessage)
+    }
 
     /**
      * Called when the download is paused by the user or [DownloadManager.pauseDownload].

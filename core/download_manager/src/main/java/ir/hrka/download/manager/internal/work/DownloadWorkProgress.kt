@@ -2,8 +2,9 @@ package ir.hrka.download.manager.internal.work
 
 import androidx.work.Data
 import androidx.work.WorkInfo
-import ir.hrka.download.manager.DownloadStatus
-import ir.hrka.download.manager.DownloadType
+import ir.hrka.download.manager.error.DownloadError
+import ir.hrka.download.manager.model.DownloadStatus
+import ir.hrka.download.manager.model.DownloadType
 
 /**
  * Runtime progress snapshot published by the download worker through `WorkManager.setProgress()`.
@@ -27,6 +28,7 @@ import ir.hrka.download.manager.DownloadType
  * @property currentPartReceivedBytes Bytes received for the active part only.
  * @property currentPartTotalBytes Expected size of the active part, if known.
  * @property errorMessage Failure reason when [status] is [DownloadStatus.Failed].
+ * @property errorCode Stable [DownloadError.code] when [status] is [DownloadStatus.Failed].
  * @property outputFilePath Absolute path to the saved file when [status] is [DownloadStatus.Completed].
  */
 internal data class DownloadWorkProgress(
@@ -41,6 +43,7 @@ internal data class DownloadWorkProgress(
     val currentPartReceivedBytes: Long = 0L,
     val currentPartTotalBytes: Long? = null,
     val errorMessage: String? = null,
+    val errorCode: String? = null,
     val outputFilePath: String? = null,
 ) {
 
@@ -60,6 +63,7 @@ internal data class DownloadWorkProgress(
             currentPartTotalBytes ?: DownloadWorkInput.INVALID_SIZE,
         )
         .putString(KEY_ERROR_MESSAGE, errorMessage)
+        .putString(KEY_ERROR_CODE, errorCode)
         .putString(KEY_OUTPUT_FILE_PATH, outputFilePath)
         .build()
 
@@ -90,6 +94,7 @@ internal data class DownloadWorkProgress(
         private const val KEY_CURRENT_PART_RECEIVED_BYTES = "progress_current_part_received_bytes"
         private const val KEY_CURRENT_PART_TOTAL_BYTES = "progress_current_part_total_bytes"
         private const val KEY_ERROR_MESSAGE = "progress_error_message"
+        private const val KEY_ERROR_CODE = "progress_error_code"
         private const val KEY_OUTPUT_FILE_PATH = "progress_output_file_path"
 
         /** Restores [DownloadWorkProgress] from WorkManager progress [Data]. */
@@ -115,6 +120,7 @@ internal data class DownloadWorkProgress(
                 currentPartReceivedBytes = data.getLong(KEY_CURRENT_PART_RECEIVED_BYTES, 0L),
                 currentPartTotalBytes = rawPartTotalBytes.takeIf { it != DownloadWorkInput.INVALID_SIZE },
                 errorMessage = data.getString(KEY_ERROR_MESSAGE),
+                errorCode = data.getString(KEY_ERROR_CODE),
                 outputFilePath = data.getString(KEY_OUTPUT_FILE_PATH),
             ).withCalculatedProgress()
         }
@@ -198,11 +204,12 @@ internal data class DownloadWorkProgress(
 
         /** Terminal failure. */
         fun failed(
-            errorMessage: String,
+            error: DownloadError,
             lastKnown: DownloadWorkProgress? = null,
         ): DownloadWorkProgress = (lastKnown ?: pending()).copy(
             status = DownloadStatus.Failed,
-            errorMessage = errorMessage,
+            errorMessage = error.userMessage,
+            errorCode = error.code,
         )
 
         /** User- or system-initiated cancellation. */

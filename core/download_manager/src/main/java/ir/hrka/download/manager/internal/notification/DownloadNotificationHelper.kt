@@ -7,7 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
-import ir.hrka.download.manager.DownloadStatus
+import ir.hrka.download.manager.model.DownloadStatus
 import ir.hrka.download.manager.api.DownloadActionReceiver
 import ir.hrka.download.manager.internal.work.DownloadWorkActions
 import ir.hrka.download.manager.internal.work.DownloadWorkInput

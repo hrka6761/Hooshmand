@@ -1,12 +1,12 @@
-package ir.hrka.download.manager
+package ir.hrka.download.manager.model
 
 /**
  * Target on-device storage area for a downloaded file.
  *
- * Each value maps to a dedicated [ir.hrka.download.manager.filing.FileProvider]
+ * Each value maps to a dedicated [ir.hrka.download.manager.internal.storage.FileProvider]
  * implementation that resolves the output path and enforces storage permissions.
  *
- * @see DownloadManager.Builder.setFileLocation
+ * @see ir.hrka.download.manager.api.DownloadManager.Builder.setFileLocation
  */
 enum class DownloadStorageLocation {
 

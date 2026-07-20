@@ -1,14 +1,15 @@
-package ir.hrka.download.manager.internal.work
+package ir.hrka.download.manager.api
 
 import android.content.Context
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
+import ir.hrka.download.manager.internal.work.DownloadWorker
 
 /**
  * WorkManager [WorkerFactory] that creates [DownloadWorker] instances.
  *
- * [DownloadWorker] is internal to the library, so the host app should register this factory
+ * [DownloadWorker] is internal to the library, so the host app must register this factory
  * when configuring WorkManager. Delegate all other worker types to the default factory.
  *
  * ## Host app setup
@@ -24,8 +25,6 @@ import androidx.work.WorkerParameters
  *
  * If the app already uses a custom [WorkerFactory], wrap or chain factories so
  * [DownloadWorker] is still created for its class name.
- *
- * @see DownloadWorker
  */
 class DownloadWorkerFactory : WorkerFactory() {
 
@@ -42,8 +41,9 @@ class DownloadWorkerFactory : WorkerFactory() {
         workerClassName: String,
         workerParameters: WorkerParameters,
     ): ListenableWorker? =
-        if (workerClassName == DownloadWorker::class.java.name)
+        if (workerClassName == DownloadWorker::class.java.name) {
             DownloadWorker(appContext, workerParameters)
-        else
+        } else {
             null
+        }
 }

@@ -1,17 +1,18 @@
-package ir.hrka.download.manager.core
+package ir.hrka.download.manager.internal.transfer
 
-import ir.hrka.download.manager.exception.NoResponseException
-import ir.hrka.download.manager.filing.FileProvider
+import ir.hrka.download.manager.error.DownloadError
+import ir.hrka.download.manager.error.EmptyResponseException
+import ir.hrka.download.manager.error.HttpDownloadException
+import ir.hrka.download.manager.error.ResumeNotSupportedException
+import ir.hrka.download.manager.internal.storage.FileProvider
 import ir.hrka.download.manager.internal.work.ActiveDownloadTransferRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.util.concurrent.TimeUnit
 
 /**
  * OkHttp-based download engine that streams HTTP response bytes to disk.
@@ -20,9 +21,10 @@ import java.util.concurrent.TimeUnit
  * Progress is reported to [OkHttpListener] at roughly 200 ms intervals.
  *
  * @property fileProvider Supplies the output [File] when [outputFile] is not provided.
- * @see OkHttpListener
  */
-internal class OkHttpDownloader(private val fileProvider: FileProvider) {
+internal class OkHttpDownloader(
+    private val fileProvider: FileProvider,
+) {
 
     private var httpInputStream: InputStream? = null
     private var fileOutputStream: FileOutputStream? = null
@@ -39,6 +41,7 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
      * @param sourceOffset Bytes already received from [fileUrl]; sent as a HTTP Range header when positive.
      * @param overallReceivedBytes Bytes already on disk before this segment starts (for overall progress).
      * @param overallTotalBytes Total expected bytes for the full output file, if known.
+     * @param downloadId Work id used to cancel the in-flight OkHttp call on pause/stop.
      * @param shouldStop Invoked during transfer; return `true` to stop early (pause/cancel).
      */
     suspend fun startDownload(
@@ -56,7 +59,10 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
     ) {
         val targetFile = outputFile ?: fileProvider.provide()
         if (shouldStop()) {
-            listener.onDownloadFailed(targetFile, IOException("Download stopped"))
+            listener.onDownloadFailed(
+                targetFile,
+                IOException(DownloadError.STOPPED_MESSAGE),
+            )
             return
         }
 
@@ -66,25 +72,53 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
         val bytesReadSizeBuffer = mutableListOf<Long>()
         val bytesReadLatencyBuffer = mutableListOf<Long>()
 
-        val client = provideOkHttpClient()
-        val request = provideRequest(sourceOffset, fileUrl, headers)
+        val client = DownloadHttpClient.instance
+        val request = buildRequest(sourceOffset, fileUrl, headers)
         val call = client.newCall(request)
         downloadId?.let { ActiveDownloadTransferRegistry.register(it, call) }
 
         try {
             call.execute().use { response ->
                 if (shouldStop()) {
-                    listener.onDownloadFailed(targetFile, IOException("Download stopped"))
+                    listener.onDownloadFailed(
+                        targetFile,
+                        IOException(DownloadError.STOPPED_MESSAGE),
+                    )
                     return
                 }
 
                 if (!response.isSuccessful) {
-                    listener.onDownloadFailed(targetFile, NoResponseException())
+                    listener.onDownloadFailed(
+                        targetFile,
+                        HttpDownloadException(
+                            httpCode = response.code,
+                            message = "HTTP ${response.code}: ${response.message}",
+                        ),
+                    )
                     return
                 }
 
-                val resolvedSegmentTotal = HttpResponseSizeParser.resolveTotalBytes(response, sourceOffset)
-                    ?: expectedSegmentBytes.takeIf { it > 0L }
+                if (sourceOffset > 0L && response.code != HTTP_PARTIAL_CONTENT) {
+                    listener.onDownloadFailed(
+                        targetFile,
+                        ResumeNotSupportedException(
+                            message =
+                                "Expected HTTP 206 for resume at offset $sourceOffset, " +
+                                    "but server returned ${response.code}.",
+                        ),
+                    )
+                    return
+                }
+
+                val body = response.body
+                if (body == null) {
+                    listener.onDownloadFailed(targetFile, EmptyResponseException())
+                    return
+                }
+
+                val resolvedSegmentTotal =
+                    HttpResponseSizeParser.resolveTotalBytes(response, sourceOffset)
+                        ?: expectedSegmentBytes.takeIf { it > 0L }
                 val effectiveOverallTotal = overallTotalBytes ?: resolvedSegmentTotal
 
                 listener.onProgressUpdate(
@@ -98,9 +132,9 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
 
                 FileOutputStream(targetFile, appendToOutput).use { output ->
                     fileOutputStream = output
-                    response.body?.byteStream()?.use { input ->
+                    body.byteStream().use { input ->
                         httpInputStream = input
-                        val buffer = ByteArray(8 * 1024)
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         var bytesRead: Int
 
                         while (input.read(buffer).also { bytesRead = it } != -1) {
@@ -121,20 +155,21 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
                                 )
                                 listener.onDownloadFailed(
                                     targetFile,
-                                    IOException("Download stopped"),
+                                    IOException(DownloadError.STOPPED_MESSAGE),
                                 )
                                 return
                             }
 
                             val curTs = System.currentTimeMillis()
-                            if (curTs - lastSetProgressTs > 200) {
-                                val bytesPerMs = calculateBytesPerMs(
-                                    deltaBytes = deltaBytes,
-                                    lastSetProgressTs = lastSetProgressTs,
-                                    curTs = curTs,
-                                    bytesReadSizeBuffer = bytesReadSizeBuffer,
-                                    bytesReadLatencyBuffer = bytesReadLatencyBuffer,
-                                ).also { deltaBytes = 0L }
+                            if (curTs - lastSetProgressTs > PROGRESS_INTERVAL_MS) {
+                                val bytesPerMs =
+                                    calculateBytesPerMs(
+                                        deltaBytes = deltaBytes,
+                                        lastSetProgressTs = lastSetProgressTs,
+                                        curTs = curTs,
+                                        bytesReadSizeBuffer = bytesReadSizeBuffer,
+                                        bytesReadLatencyBuffer = bytesReadLatencyBuffer,
+                                    ).also { deltaBytes = 0L }
 
                                 publishProgress(
                                     listener = listener,
@@ -157,7 +192,10 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
             }
         } catch (e: IOException) {
             if (call.isCanceled() || shouldStop()) {
-                listener.onDownloadFailed(targetFile, IOException("Download stopped"))
+                listener.onDownloadFailed(
+                    targetFile,
+                    IOException(DownloadError.STOPPED_MESSAGE),
+                )
             } else {
                 listener.onDownloadFailed(targetFile, e)
             }
@@ -193,11 +231,12 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
         bytesPerMs: Float = 0f,
     ) {
         val overallReceived = overallReceivedBytes + segmentReceivedBytes
-        val remainingMs = calculateRemainingMs(
-            bytesPerMs = if (bytesPerMs > 0f) bytesPerMs else 0f,
-            totalBytes = effectiveOverallTotal,
-            downloadedBytes = overallReceived,
-        )
+        val remainingMs =
+            calculateRemainingMs(
+                bytesPerMs = if (bytesPerMs > 0f) bytesPerMs else 0f,
+                totalBytes = effectiveOverallTotal,
+                downloadedBytes = overallReceived,
+            )
 
         listener.onProgressUpdate(
             file = targetFile,
@@ -209,9 +248,6 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
         )
     }
 
-    /**
-     * Computes a smoothed transfer rate in bytes per millisecond using the last five samples.
-     */
     private fun calculateBytesPerMs(
         deltaBytes: Long,
         lastSetProgressTs: Long,
@@ -221,19 +257,14 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
     ): Float {
         if (lastSetProgressTs == 0L) return 0f
 
-        if (bytesReadSizeBuffer.size == 5) bytesReadSizeBuffer.removeAt(0)
+        if (bytesReadSizeBuffer.size == RATE_SAMPLE_COUNT) bytesReadSizeBuffer.removeAt(0)
         bytesReadSizeBuffer.add(deltaBytes)
-        if (bytesReadLatencyBuffer.size == 5) bytesReadLatencyBuffer.removeAt(0)
+        if (bytesReadLatencyBuffer.size == RATE_SAMPLE_COUNT) bytesReadLatencyBuffer.removeAt(0)
         bytesReadLatencyBuffer.add(curTs - lastSetProgressTs)
 
         return bytesReadSizeBuffer.sum().toFloat() / bytesReadLatencyBuffer.sum()
     }
 
-    /**
-     * Estimates remaining transfer time in milliseconds from [bytesPerMs] and [totalBytes].
-     *
-     * Returns `0` when rate or total size is unknown or non-positive.
-     */
     private fun calculateRemainingMs(
         bytesPerMs: Float,
         totalBytes: Long?,
@@ -243,20 +274,7 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
         return (totalBytes - downloadedBytes) / bytesPerMs
     }
 
-    /** Builds an [OkHttpClient] with timeouts suited for large file downloads. */
-    private fun provideOkHttpClient() =
-        OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
-            .build()
-
-    /**
-     * Builds a GET [Request] for [url] with optional [headers] and HTTP Range resume.
-     *
-     * @param sourceOffset Bytes already received from [url]; when positive, adds `Range: bytes=<offset>-`.
-     */
-    private fun provideRequest(
+    private fun buildRequest(
         sourceOffset: Long,
         url: String,
         headers: Map<String, String>,
@@ -269,5 +287,12 @@ internal class OkHttpDownloader(private val fileProvider: FileProvider) {
         }
 
         return requestBuilder.build()
+    }
+
+    private companion object {
+        const val HTTP_PARTIAL_CONTENT: Int = 206
+        const val PROGRESS_INTERVAL_MS: Long = 200L
+        const val RATE_SAMPLE_COUNT: Int = 5
+        const val DEFAULT_BUFFER_SIZE: Int = 8 * 1024
     }
 }

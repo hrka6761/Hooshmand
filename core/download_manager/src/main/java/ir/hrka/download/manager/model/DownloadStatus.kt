@@ -1,9 +1,9 @@
-package ir.hrka.download.manager
+package ir.hrka.download.manager.model
 
 /**
  * Lifecycle states reported by the download engine and persisted across process restarts.
  *
- * @see DownloadManager
+ * @see ir.hrka.download.manager.api.DownloadManager
  */
 enum class DownloadStatus {
 
@@ -16,7 +16,12 @@ enum class DownloadStatus {
     /** Download is paused and can be resumed from the last byte offset. */
     Paused,
 
-    /** Merging downloaded parts into the final file ([DownloadType.MultiParts] only). */
+    /**
+     * Reserved for a future merge step.
+     *
+     * Multipart downloads currently append parts in order into one file and never publish
+     * this status.
+     */
     Merging,
 
     /** Download completed successfully. */

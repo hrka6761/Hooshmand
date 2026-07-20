@@ -105,7 +105,7 @@ internal object DownloadWorkerControl {
     /**
      * Returns `true` when the active transfer should stop cooperatively.
      *
-     * Used by [ir.hrka.download.manager.core.OkHttpDownloader] during byte streaming.
+     * Used by [ir.hrka.download.manager.internal.transfer.OkHttpDownloader] during byte streaming.
      */
     fun shouldStop(downloadId: String): Boolean =
         isPauseRequested(downloadId) || isCancelRequested(downloadId)

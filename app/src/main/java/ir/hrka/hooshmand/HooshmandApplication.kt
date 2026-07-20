@@ -3,7 +3,7 @@ package ir.hrka.hooshmand
 import android.app.Application
 import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
-import ir.hrka.download.manager.internal.work.DownloadWorkerFactory
+import ir.hrka.download.manager.api.DownloadWorkerFactory
 
 @HiltAndroidApp
 class HooshmandApplication : Application(), Configuration.Provider {

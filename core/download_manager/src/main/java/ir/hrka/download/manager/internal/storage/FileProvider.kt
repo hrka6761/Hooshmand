@@ -1,17 +1,13 @@
-package ir.hrka.download.manager.filing
+package ir.hrka.download.manager.internal.storage
 
-import ir.hrka.download.manager.FileCreationMode
+import ir.hrka.download.manager.model.FileCreationMode
 import java.io.File
 
 /**
  * Resolves the local output [File] for a download job.
  *
- * Implementations map a [ir.hrka.download.manager.DownloadStorageLocation] to a concrete
+ * Implementations map a [ir.hrka.download.manager.model.DownloadStorageLocation] to a concrete
  * filesystem path and apply [FileCreationMode] when a file with the same name already exists.
- *
- * @see InternalFileProvider
- * @see ExternalFileProvider
- * @see PublicFileProvider
  */
 internal interface FileProvider {
 
@@ -27,13 +23,6 @@ internal interface FileProvider {
 
     /**
      * Produces a collision-free file name by inserting a millisecond timestamp before the extension.
-     *
-     * Examples:
-     * - `video.mp4` → `video_1712345678901.mp4`
-     * - `README` → `README_1712345678901`
-     *
-     * @param fileName Original file name.
-     * @return A new file name safe to use with [FileCreationMode.CreateNew].
      */
     fun getUniqueFileName(fileName: String): String {
         val timestamp = System.currentTimeMillis().toString()

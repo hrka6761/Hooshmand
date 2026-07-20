@@ -1,4 +1,4 @@
-package ir.hrka.download.manager
+package ir.hrka.download.manager.model
 
 /**
  * Describes a file to be downloaded.
@@ -12,10 +12,10 @@ package ir.hrka.download.manager
  * progress reporting and optional validation.
  * @property headers Optional HTTP request headers to include when downloading
  * this file (for example, `Authorization` or `User-Agent`).
- * @property checksum Optional checksum used to verify the integrity of the
- * downloaded file after completion.
+ * @property checksum Optional checksum reserved for future integrity verification.
+ * Not validated by the current download engine.
  *
- * @see DownloadManager
+ * @see ir.hrka.download.manager.api.DownloadManager
  * @see DownloadType
  */
 data class SingleItemDownloadData(

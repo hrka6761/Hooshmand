@@ -5,12 +5,15 @@ import android.content.pm.ServiceInfo
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
-import ir.hrka.download.manager.DownloadType
-import ir.hrka.download.manager.SingleItemDownloadData
-import ir.hrka.download.manager.core.OkHttpDownloader
-import ir.hrka.download.manager.core.OkHttpListener
-import ir.hrka.download.manager.filing.FileProviderFactory
+import ir.hrka.download.manager.error.DownloadError
 import ir.hrka.download.manager.internal.notification.DownloadNotificationHelper
+import ir.hrka.download.manager.internal.storage.FileProviderFactory
+import ir.hrka.download.manager.internal.transfer.OkHttpDownloader
+import ir.hrka.download.manager.internal.transfer.OkHttpListener
+import ir.hrka.download.manager.model.DownloadStatus
+import ir.hrka.download.manager.model.DownloadType
+import ir.hrka.download.manager.model.FileCreationMode
+import ir.hrka.download.manager.model.SingleItemDownloadData
 import java.io.File
 import java.io.IOException
 
@@ -20,7 +23,7 @@ import java.io.IOException
  * Reads [DownloadWorkInput] from [inputData], publishes [DownloadWorkProgress] via
  * [setProgress], and keeps a foreground notification in sync through
  * [DownloadNotificationHelper]. Pause, resume, and stop requests are coordinated through
- * [DownloadWorkerControl] and [ir.hrka.download.manager.internal.receiver.DownloadActionReceiver].
+ * [DownloadWorkerControl] and [ir.hrka.download.manager.api.DownloadActionReceiver].
  *
  * Supports:
  * - [DownloadType.SingleFile] — one URL written to a single output file with resume support.
@@ -45,49 +48,82 @@ internal class DownloadWorker(
      * [Result.retry] for unexpected non-terminal states.
      */
     override suspend fun doWork(): Result {
-        val input = DownloadWorkInput.fromWorkData(inputData)
+        val input =
+            try {
+                DownloadWorkInput.fromWorkData(inputData)
+            } catch (error: Exception) {
+                // Cannot publish typed progress without a valid download id / notification config.
+                return Result.failure()
+            }
+
         DownloadWorkerControl.register(input.downloadId)
 
         val notificationHelper = DownloadNotificationHelper.fromInput(applicationContext, input)
-        val totalParts = when (input.downloadType) {
-            DownloadType.SingleFile -> 1
-            DownloadType.MultiParts -> input.parts.size.coerceAtLeast(1)
-        }
+        val totalParts =
+            when (input.downloadType) {
+                DownloadType.SingleFile -> 1
+                DownloadType.MultiParts -> input.parts.size.coerceAtLeast(1)
+            }
         var lastProgress = DownloadWorkProgress.pending(input.fileSize, totalParts)
 
         try {
             publishProgress(notificationHelper, lastProgress)
 
-            val fileProvider = FileProviderFactory.create(applicationContext, input)
+            // Worker retries / process death must not wipe partial bytes written with Overwrite.
+            val effectiveCreationMode =
+                if (runAttemptCount > 0 && input.creationMode == FileCreationMode.Overwrite) {
+                    FileCreationMode.Append
+                } else {
+                    input.creationMode
+                }
+
+            val fileProvider =
+                FileProviderFactory.create(
+                    context = applicationContext,
+                    input = input,
+                    creationMode = effectiveCreationMode,
+                )
             val outputFile = fileProvider.provide()
             val downloader = OkHttpDownloader(fileProvider)
 
-            lastProgress = when (input.downloadType) {
-                DownloadType.SingleFile -> downloadSingleFile(
-                    input = input,
-                    downloader = downloader,
-                    outputFile = outputFile,
-                    notificationHelper = notificationHelper,
-                    downloadId = input.downloadId,
-                    initialProgress = lastProgress,
-                )
+            lastProgress =
+                when (input.downloadType) {
+                    DownloadType.SingleFile ->
+                        downloadSingleFile(
+                            input = input,
+                            downloader = downloader,
+                            outputFile = outputFile,
+                            notificationHelper = notificationHelper,
+                            downloadId = input.downloadId,
+                            initialProgress = lastProgress,
+                        )
 
-                DownloadType.MultiParts -> downloadMultiParts(
-                    input = input,
-                    downloader = downloader,
-                    outputFile = outputFile,
-                    notificationHelper = notificationHelper,
-                    downloadId = input.downloadId,
-                    initialProgress = lastProgress,
-                )
-            }
+                    DownloadType.MultiParts ->
+                        downloadMultiParts(
+                            input = input,
+                            downloader = downloader,
+                            outputFile = outputFile,
+                            notificationHelper = notificationHelper,
+                            downloadId = input.downloadId,
+                            initialProgress = lastProgress,
+                        )
+                }
 
             return when (lastProgress.status) {
-                ir.hrka.download.manager.DownloadStatus.Completed -> Result.success()
-                ir.hrka.download.manager.DownloadStatus.Canceled -> Result.failure()
-                ir.hrka.download.manager.DownloadStatus.Failed -> Result.failure()
+                DownloadStatus.Completed -> Result.success()
+                DownloadStatus.Canceled -> Result.failure()
+                DownloadStatus.Failed -> Result.failure()
                 else -> Result.retry()
             }
+        } catch (error: Exception) {
+            val downloadError = DownloadError.fromThrowable(error)
+            val failed =
+                DownloadWorkProgress.failed(
+                    error = downloadError,
+                    lastKnown = lastProgress,
+                )
+            runCatching { publishProgress(notificationHelper, failed) }
+            return Result.failure()
         } finally {
             DownloadWorkerControl.unregister(input.downloadId)
         }
@@ -162,10 +198,14 @@ internal class DownloadWorker(
 
                 SegmentOutcomeType.Stopped -> continue
                 SegmentOutcomeType.Failed -> {
-                    val failed = DownloadWorkProgress.failed(
-                        errorMessage = outcome.error?.message ?: "Download failed",
-                        lastKnown = lastProgress,
-                    )
+                    val downloadError =
+                        outcome.error?.let(DownloadError::fromThrowable)
+                            ?: DownloadError.Unknown()
+                    val failed =
+                        DownloadWorkProgress.failed(
+                            error = downloadError,
+                            lastKnown = lastProgress,
+                        )
                     publishProgress(notificationHelper, failed)
                     return failed
                 }
@@ -256,10 +296,14 @@ internal class DownloadWorker(
                     SegmentOutcomeType.Completed -> break
                     SegmentOutcomeType.Stopped -> continue
                     SegmentOutcomeType.Failed -> {
-                        val failed = DownloadWorkProgress.failed(
-                            errorMessage = outcome.error?.message ?: "Download failed",
-                            lastKnown = lastProgress,
-                        )
+                        val downloadError =
+                            outcome.error?.let(DownloadError::fromThrowable)
+                                ?: DownloadError.Unknown()
+                        val failed =
+                            DownloadWorkProgress.failed(
+                                error = downloadError,
+                                lastKnown = lastProgress,
+                            )
                         publishProgress(notificationHelper, failed)
                         return failed
                     }
@@ -362,15 +406,19 @@ internal class DownloadWorker(
             }
 
             override suspend fun onDownloadFailed(file: File?, e: Exception) {
-                outcomeType = if (DownloadWorkerControl.isPauseRequested(downloadId)) {
-                    SegmentOutcomeType.Stopped
-                } else if (DownloadWorkerControl.isCancelRequested(downloadId)) {
-                    SegmentOutcomeType.Stopped
-                } else if (e.message == "Download stopped") {
-                    SegmentOutcomeType.Stopped
-                } else {
-                    SegmentOutcomeType.Failed
-                }
+                outcomeType =
+                    when {
+                        DownloadWorkerControl.isPauseRequested(downloadId) ->
+                            SegmentOutcomeType.Stopped
+
+                        DownloadWorkerControl.isCancelRequested(downloadId) ->
+                            SegmentOutcomeType.Stopped
+
+                        e.message == DownloadError.STOPPED_MESSAGE ->
+                            SegmentOutcomeType.Stopped
+
+                        else -> SegmentOutcomeType.Failed
+                    }
                 error = e
             }
         }

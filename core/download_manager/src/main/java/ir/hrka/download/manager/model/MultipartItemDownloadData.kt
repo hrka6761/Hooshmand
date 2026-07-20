@@ -1,4 +1,4 @@
-package ir.hrka.download.manager
+package ir.hrka.download.manager.model
 
 /**
  * Configuration for a [DownloadType.MultiParts] download job.

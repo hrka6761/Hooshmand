@@ -2,7 +2,8 @@ package ir.hrka.download.manager.internal.listener
 
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import ir.hrka.download.manager.DownloadStatus
+import ir.hrka.download.manager.error.DownloadError
+import ir.hrka.download.manager.model.DownloadStatus
 import ir.hrka.download.manager.api.DownloadListener
 import ir.hrka.download.manager.internal.work.DownloadWorkProgress
 import kotlinx.coroutines.CoroutineScope
@@ -115,7 +116,12 @@ internal class DownloadListenerBridge(
 
             DownloadStatus.Failed -> {
                 if (lastDispatchedStatus != DownloadStatus.Failed) {
-                    listener.onDownloadFailed(progress.errorMessage)
+                    listener.onDownloadFailed(
+                        DownloadError.fromSerialized(
+                            code = progress.errorCode,
+                            message = progress.errorMessage,
+                        ),
+                    )
                 }
             }
 
@@ -142,7 +148,12 @@ internal class DownloadListenerBridge(
             progress.status != DownloadStatus.Failed &&
             lastDispatchedStatus != DownloadStatus.Failed
         ) {
-            listener.onDownloadFailed(progress.errorMessage ?: "Download failed")
+            listener.onDownloadFailed(
+                DownloadError.fromSerialized(
+                    code = progress.errorCode,
+                    message = progress.errorMessage ?: "Download failed. Please try again.",
+                ),
+            )
             lastDispatchedStatus = DownloadStatus.Failed
             return
         }

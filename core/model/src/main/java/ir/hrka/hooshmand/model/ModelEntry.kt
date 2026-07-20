@@ -7,11 +7,13 @@ package ir.hrka.hooshmand.model
  * append [multiPartAddresses] into [modelName].
  *
  * @property modelName Output `.litertlm` file name after download/merge.
+ * @property modelSize Expected final model size in bytes (from remote `model_size`).
  * @property singlePartAddress Direct URL for a single-file model, or `null` when unused.
  * @property multiPartAddresses Ordered part URLs appended into [modelName], or empty when unused.
  */
 data class ModelEntry(
     val modelName: String,
+    val modelSize: Long,
     val singlePartAddress: String?,
     val multiPartAddresses: List<String>,
 )

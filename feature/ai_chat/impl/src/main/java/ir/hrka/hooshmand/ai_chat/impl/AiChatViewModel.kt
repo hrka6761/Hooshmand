@@ -123,6 +123,9 @@ class AiChatViewModel @Inject constructor(
     /**
      * Re-checks whether a valid model file exists and either starts the chat runtime or
      * shows the download dialog.
+     *
+     * Loads the latest catalog entry from remote `models.json` and compares the on-disk file
+     * size with [ModelEntry.modelSize] before treating the model as ready.
      */
     fun refreshModelStatus() {
         viewModelScope.launch {
@@ -133,58 +136,40 @@ class AiChatViewModel @Inject constructor(
                     errorMessage = null,
                 )
             }
-            val isReady = preferencesRepository.isModelReady()
-            if (isReady) {
-                val modelPath = preferencesRepository.getModelFilePath()
-                if (modelFileLocator.requiresPublicStoragePermission(modelPath)) {
-                    stopDownloadObservation()
-                    _uiState.update {
-                        it.copy(
-                            isCheckingModel = false,
-                            isModelReady = false,
-                            showDownloadDialog = false,
-                            needsPublicStoragePermission = true,
-                            selectedStorageLocation = DownloadStorageLocation.Public,
-                            isDownloading = false,
-                            isPaused = false,
-                            downloadProgress = null,
-                        )
-                    }
-                    return@launch
+
+            val modelResult = runCatching { ensureLatestModel() }
+            val model = modelResult.getOrNull()
+            val isReady =
+                if (model != null) {
+                    preferencesRepository.isModelReady(
+                        expectedFileName = model.modelName,
+                        expectedSizeInBytes = model.modelSize,
+                    )
+                } else {
+                    // Offline / catalog failure: fall back to a local-only readiness check.
+                    preferencesRepository.isModelReady()
                 }
 
-                stopDownloadObservation()
-                _uiState.update {
-                    it.copy(
-                        isCheckingModel = false,
-                        isModelReady = true,
-                        showDownloadDialog = false,
-                        needsPublicStoragePermission = false,
-                        isDownloading = false,
-                        isPaused = false,
-                        downloadProgress = null,
-                    )
-                }
-                initializeRuntime()
+            if (isReady) {
+                presentReadyModelOrRequestPermission()
                 return@launch
             }
 
-            val model =
-                runCatching { ensureLatestModel() }.getOrElse { error ->
-                    _uiState.update {
-                        it.copy(
-                            isCheckingModel = false,
-                            isModelReady = false,
-                            showDownloadDialog = true,
-                            needsPublicStoragePermission = false,
-                            isDownloading = false,
-                            downloadProgress = null,
-                            errorMessage = error.message
-                                ?: "Failed to load model download info.",
-                        )
-                    }
-                    return@launch
+            if (model == null) {
+                _uiState.update {
+                    it.copy(
+                        isCheckingModel = false,
+                        isModelReady = false,
+                        showDownloadDialog = true,
+                        needsPublicStoragePermission = false,
+                        isDownloading = false,
+                        downloadProgress = null,
+                        errorMessage = modelResult.exceptionOrNull()?.message
+                            ?: "Failed to load model download info.",
+                    )
                 }
+                return@launch
+            }
 
             val observer = getOrCreateDownloadObserver(model)
             val isActive = observer.isDownloadActive()
@@ -201,7 +186,7 @@ class AiChatViewModel @Inject constructor(
                         if (isActive) {
                             it.downloadProgress
                                 ?: ModelDownloadProgress(
-                                    totalBytes = 0L,
+                                    totalBytes = model.modelSize,
                                     totalParts = modelPartCount(model),
                                 )
                         } else {
@@ -211,6 +196,43 @@ class AiChatViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    /**
+     * Updates UI for a verified on-disk model, or requests public-storage permission when needed.
+     */
+    private suspend fun presentReadyModelOrRequestPermission() {
+        val modelPath = preferencesRepository.getModelFilePath()
+        if (modelFileLocator.requiresPublicStoragePermission(modelPath)) {
+            stopDownloadObservation()
+            _uiState.update {
+                it.copy(
+                    isCheckingModel = false,
+                    isModelReady = false,
+                    showDownloadDialog = false,
+                    needsPublicStoragePermission = true,
+                    selectedStorageLocation = DownloadStorageLocation.Public,
+                    isDownloading = false,
+                    isPaused = false,
+                    downloadProgress = null,
+                )
+            }
+            return
+        }
+
+        stopDownloadObservation()
+        _uiState.update {
+            it.copy(
+                isCheckingModel = false,
+                isModelReady = true,
+                showDownloadDialog = false,
+                needsPublicStoragePermission = false,
+                isDownloading = false,
+                isPaused = false,
+                downloadProgress = null,
+            )
+        }
+        initializeRuntime()
     }
 
     /**
@@ -282,7 +304,7 @@ class AiChatViewModel @Inject constructor(
                     errorMessage = null,
                     downloadProgress =
                         ModelDownloadProgress(
-                            totalBytes = 0L,
+                            totalBytes = model.modelSize,
                             totalParts = modelPartCount(model),
                         ),
                 )
@@ -302,6 +324,7 @@ class AiChatViewModel @Inject constructor(
                     modelFileLocator.shouldOverwriteExistingFile(
                         file = targetFile,
                         expectedFileName = model.modelName,
+                        expectedSizeInBytes = model.modelSize,
                     )
                 ) {
                     FileCreationMode.Overwrite
@@ -639,9 +662,16 @@ class AiChatViewModel @Inject constructor(
                     it.copy(isModelInitializing = true, runtimeErrorMessage = null)
                 }
 
+                val model = latestModel
                 val modelPath =
                     preferencesRepository.getModelFilePath().ifBlank {
-                        modelFileLocator.resolveValidModelPath(null).orEmpty()
+                        modelFileLocator
+                            .resolveValidModelPath(
+                                storedPath = null,
+                                expectedFileName = model?.modelName,
+                                expectedSizeInBytes = model?.modelSize,
+                            )
+                            .orEmpty()
                     }
                 if (modelPath.isBlank()) {
                     _uiState.update {
@@ -947,7 +977,9 @@ class AiChatViewModel @Inject constructor(
     private fun createDownloadListener(): DownloadListener =
         object : DownloadListener {
             override fun onStartDownload() {
-                val parts = latestModel?.let(::modelPartCount) ?: 1
+                val model = latestModel
+                val parts = model?.let(::modelPartCount) ?: 1
+                val totalBytes = model?.modelSize ?: 0L
                 _uiState.update {
                     it.copy(
                         isDownloading = true,
@@ -956,7 +988,7 @@ class AiChatViewModel @Inject constructor(
                         downloadProgress =
                             it.downloadProgress?.copy(progress = 0f)
                                 ?: ModelDownloadProgress(
-                                    totalBytes = 0L,
+                                    totalBytes = totalBytes,
                                     totalParts = parts,
                                 ),
                     )
@@ -971,6 +1003,7 @@ class AiChatViewModel @Inject constructor(
                 currentPartIndex: Int,
                 totalParts: Int,
             ) {
+                val fallbackTotalBytes = latestModel?.modelSize ?: 0L
                 _uiState.update {
                     it.copy(
                         isDownloading = true,
@@ -979,7 +1012,7 @@ class AiChatViewModel @Inject constructor(
                         downloadProgress =
                             ModelDownloadProgress(
                                 receivedBytes = receivedBytes,
-                                totalBytes = it.downloadProgress?.totalBytes ?: 0L,
+                                totalBytes = it.downloadProgress?.totalBytes ?: fallbackTotalBytes,
                                 progress = progress.coerceIn(0f, 1f),
                                 remainingTimeMs = remainingTime,
                                 downloadRateBytesPerSec = downloadRate,
@@ -998,6 +1031,7 @@ class AiChatViewModel @Inject constructor(
                 currentPartIndex: Int,
                 totalParts: Int,
             ) {
+                val fallbackTotalBytes = latestModel?.modelSize ?: 0L
                 _uiState.update {
                     it.copy(
                         isDownloading = true,
@@ -1006,7 +1040,7 @@ class AiChatViewModel @Inject constructor(
                         downloadProgress =
                             ModelDownloadProgress(
                                 receivedBytes = receivedBytes,
-                                totalBytes = it.downloadProgress?.totalBytes ?: 0L,
+                                totalBytes = it.downloadProgress?.totalBytes ?: fallbackTotalBytes,
                                 progress = progress.coerceIn(0f, 1f),
                                 remainingTimeMs = remainingTime,
                                 downloadRateBytesPerSec = downloadRate,

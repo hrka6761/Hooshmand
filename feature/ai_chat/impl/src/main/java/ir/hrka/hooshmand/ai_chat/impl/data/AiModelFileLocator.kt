@@ -24,13 +24,22 @@ class AiModelFileLocator @Inject constructor(
      * @param storedPath Preferred path from preferences, or `null`.
      * @param expectedFileName Expected `.litertlm` file name from the remote catalog, or `null`
      * to accept any `.litertlm` under the model directory.
+     * @param expectedSizeInBytes Expected final file size from remote `model_size`, or `null`
+     * to accept any non-empty file.
      */
     fun resolveValidModelPath(
         storedPath: String?,
         expectedFileName: String? = null,
+        expectedSizeInBytes: Long? = null,
     ): String? =
         candidateFiles(storedPath = storedPath, expectedFileName = expectedFileName)
-            .firstOrNull { isValidCompleteModelFile(file = it, expectedFileName = expectedFileName) }
+            .firstOrNull {
+                isValidCompleteModelFile(
+                    file = it,
+                    expectedFileName = expectedFileName,
+                    expectedSizeInBytes = expectedSizeInBytes,
+                )
+            }
             ?.absolutePath
 
     /**
@@ -50,22 +59,28 @@ class AiModelFileLocator @Inject constructor(
         }
 
     /**
-     * Whether [file] is a usable model file.
+     * Whether [file] is a usable complete model file.
      *
-     * Without a known expected size from the remote catalog, any non-empty `.litertlm` with the
-     * expected name (when provided) is accepted.
+     * When [expectedSizeInBytes] is provided, the file length must match exactly. Otherwise any
+     * non-empty `.litertlm` with the expected name (when provided) is accepted.
      *
      * @param file Candidate file.
      * @param expectedFileName Expected file name, or `null` to skip the name check.
+     * @param expectedSizeInBytes Expected size from remote `model_size`, or `null` to skip.
      */
     fun isValidCompleteModelFile(
         file: File,
         expectedFileName: String? = null,
+        expectedSizeInBytes: Long? = null,
     ): Boolean {
         if (!file.isFile) return false
         if (!file.name.endsWith(MODEL_FILE_EXTENSION)) return false
         if (expectedFileName != null && file.name != expectedFileName) return false
-        return file.length() > 0L
+        return if (expectedSizeInBytes != null) {
+            file.length() == expectedSizeInBytes
+        } else {
+            file.length() > 0L
+        }
     }
 
     /**
@@ -93,19 +108,30 @@ class AiModelFileLocator @Inject constructor(
     /**
      * Whether an existing file at the download target should be overwritten instead of appended.
      *
+     * Partial downloads with the correct type can resume via append; invalid type or oversized
+     * files must be replaced.
+     *
      * @param file Target output file.
      * @param expectedFileName Expected model file name.
+     * @param expectedSizeInBytes Expected final size from remote `model_size`.
      */
     fun shouldOverwriteExistingFile(
         file: File,
         expectedFileName: String,
+        expectedSizeInBytes: Long,
     ): Boolean {
         if (!file.exists()) return false
-        if (isValidCompleteModelFile(file = file, expectedFileName = expectedFileName)) {
+        if (
+            isValidCompleteModelFile(
+                file = file,
+                expectedFileName = expectedFileName,
+                expectedSizeInBytes = expectedSizeInBytes,
+            )
+        ) {
             return false
         }
         if (!file.name.endsWith(MODEL_FILE_EXTENSION)) return true
-        return false
+        return file.length() > expectedSizeInBytes
     }
 
     private fun candidateFiles(

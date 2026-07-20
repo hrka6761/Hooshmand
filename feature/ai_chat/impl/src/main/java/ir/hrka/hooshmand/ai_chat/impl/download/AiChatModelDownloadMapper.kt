@@ -22,7 +22,7 @@ internal fun ModelEntry.toMultipartDownloadData(): MultipartItemDownloadData {
                     fileSize = null,
                 )
             },
-        totalFileSize = null,
+        totalFileSize = modelSize,
     )
 }
 
@@ -37,7 +37,7 @@ internal fun ModelEntry.toSingleDownloadData(): SingleItemDownloadData {
     return SingleItemDownloadData(
         url = url,
         fileName = modelName,
-        fileSize = null,
+        fileSize = modelSize,
     )
 }
 

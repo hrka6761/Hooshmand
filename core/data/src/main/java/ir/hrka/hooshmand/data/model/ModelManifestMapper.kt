@@ -17,6 +17,7 @@ internal fun NetworkModelManifest.asExternalModel(): ModelManifest =
 internal fun NetworkModelEntry.asExternalModel(): ModelEntry =
     ModelEntry(
         modelName = modelName,
+        modelSize = modelSize,
         singlePartAddress = singlePartAddress,
         multiPartAddresses = multiPartAddress,
     )

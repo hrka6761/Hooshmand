@@ -61,15 +61,23 @@ constructor(
      * 2. If not, scan internal and public storage for a valid model file.
      * 3. When a valid file is found outside preferences, persist its path for later use.
      *
+     * @param expectedFileName Expected `.litertlm` name from remote `models.json`, or `null`
+     * to use the persisted file name.
+     * @param expectedSizeInBytes Expected size from remote `model_size`, or `null` to skip the
+     * size check.
      * @return `true` when a valid complete model file exists on disk.
      */
-    suspend fun isModelReady(): Boolean {
+    suspend fun isModelReady(
+        expectedFileName: String? = null,
+        expectedSizeInBytes: Long? = null,
+    ): Boolean {
         val storedPath = getModelFilePath()
-        val expectedFileName = getModelFileName().ifBlank { null }
+        val fileName = expectedFileName ?: getModelFileName().ifBlank { null }
         val validPath =
             modelFileLocator.resolveValidModelPath(
                 storedPath = storedPath,
-                expectedFileName = expectedFileName,
+                expectedFileName = fileName,
+                expectedSizeInBytes = expectedSizeInBytes,
             ) ?: return false
         if (validPath != storedPath) {
             saveDownloadSuccess(filePath = validPath)

@@ -3,21 +3,30 @@ package ir.hrka.hooshmand.ai_chat.impl.speech
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import ir.hrka.persian.tts.api.PersianTts
+import ir.hrka.persian.tts.api.PersianTtsFactory
+import ir.hrka.persian.tts.api.PersianTtsResult
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Result of requesting speech for a chat message.
  */
 internal sealed interface AiChatSpeakResult {
-    /** Playback started, or an in-progress utterance for the same message was stopped. */
+    /** Playback started, preparation started, or an in-progress utterance was stopped. */
     data object Ok : AiChatSpeakResult
-
-    /** TTS engine has not finished initializing yet. */
-    data object EngineNotReady : AiChatSpeakResult
 
     /** Message body was empty after stripping markdown. */
     data object EmptyText : AiChatSpeakResult
@@ -27,23 +36,28 @@ internal sealed interface AiChatSpeakResult {
         val languageTag: String,
     ) : AiChatSpeakResult
 
-    /** [TextToSpeech.speak] failed. */
+    /** Speech playback failed. */
     data object SpeakFailed : AiChatSpeakResult
 }
 
 /**
- * Offline text-to-speech for AI chat replies using the device [TextToSpeech] engine.
+ * Offline text-to-speech for AI chat replies.
  *
- * Supports Persian (`fa`), Arabic (`ar`), and English (`en`) when the matching offline
- * voice data is installed on the device. No network calls are made by this class.
+ * - Persian (`fa`) uses only the bundled [PersianTts] engine.
+ * - Arabic (`ar`) and English (`en`) use only the device [TextToSpeech] engine.
  */
 internal class AiChatTextToSpeech(
     context: Context,
 ) {
     private val appContext = context.applicationContext
-    private val ready = AtomicBoolean(false)
+    private val systemReady = AtomicBoolean(false)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var persianBridgeJob: Job? = null
+    private var pendingPersianJob: Job? = null
+
     private val _isSpeaking = MutableStateFlow(false)
     private val _speakingMessageId = MutableStateFlow<String?>(null)
+    private val _preparingMessageId = MutableStateFlow<String?>(null)
 
     /** `true` while an utterance is in progress. */
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
@@ -51,17 +65,53 @@ internal class AiChatTextToSpeech(
     /** Id of the message currently being spoken, or `null`. */
     val speakingMessageId: StateFlow<String?> = _speakingMessageId.asStateFlow()
 
-    private lateinit var tts: TextToSpeech
+    /**
+     * Id of the message waiting for the Persian engine to become ready, or `null`.
+     *
+     * While set, the UI should show a progress indicator instead of an error.
+     */
+    val preparingMessageId: StateFlow<String?> = _preparingMessageId.asStateFlow()
+
+    private val persianTts: PersianTts = PersianTtsFactory.create(appContext)
+    private var systemTts: TextToSpeech? = null
 
     init {
-        tts =
+        persianBridgeJob =
+            scope.launch {
+                combine(
+                    persianTts.isSpeaking,
+                    persianTts.speakingUtteranceId,
+                    _preparingMessageId,
+                ) { speaking, utteranceId, preparingId ->
+                    Triple(speaking, utteranceId, preparingId)
+                }.collect { (speaking, utteranceId, preparingId) ->
+                    if (speaking && utteranceId != null) {
+                        _isSpeaking.value = true
+                        _speakingMessageId.value = utteranceId
+                    } else if (
+                        !speaking &&
+                        preparingId == null &&
+                        _speakingMessageId.value != null &&
+                        systemTts?.isSpeaking != true
+                    ) {
+                        _isSpeaking.value = false
+                        _speakingMessageId.value = null
+                    }
+                }
+            }
+
+        systemTts =
             TextToSpeech(appContext) { status ->
-                ready.set(status == TextToSpeech.SUCCESS)
-                if (status == TextToSpeech.SUCCESS && ::tts.isInitialized) {
-                    tts.setOnUtteranceProgressListener(
+                systemReady.set(status == TextToSpeech.SUCCESS)
+                val engine = systemTts
+                if (status == TextToSpeech.SUCCESS && engine != null) {
+                    engine.setOnUtteranceProgressListener(
                         object : UtteranceProgressListener() {
                             override fun onStart(utteranceId: String?) {
                                 _isSpeaking.value = true
+                                if (!utteranceId.isNullOrBlank()) {
+                                    _speakingMessageId.value = utteranceId
+                                }
                             }
 
                             override fun onDone(utteranceId: String?) {
@@ -88,20 +138,19 @@ internal class AiChatTextToSpeech(
     /**
      * Speaks [text] for [messageId], choosing Persian, Arabic, or English from the script.
      *
-     * Stops any in-progress utterance first. If the same [messageId] is already speaking,
-     * stops playback instead (toggle).
+     * Stops any in-progress utterance first. If the same [messageId] is already speaking or
+     * preparing, stops instead (toggle).
      */
     fun speakOrStop(
         messageId: String,
         text: String,
     ): AiChatSpeakResult {
-        if (_speakingMessageId.value == messageId && _isSpeaking.value) {
+        val isActiveForMessage =
+            (_speakingMessageId.value == messageId && _isSpeaking.value) ||
+                _preparingMessageId.value == messageId
+        if (isActiveForMessage) {
             stop()
             return AiChatSpeakResult.Ok
-        }
-
-        if (!ready.get()) {
-            return AiChatSpeakResult.EngineNotReady
         }
 
         val plain = plainTextForSpeech(text)
@@ -109,26 +158,142 @@ internal class AiChatTextToSpeech(
             return AiChatSpeakResult.EmptyText
         }
 
-        val localeCandidates = speechLocaleCandidates(plain)
-        val selectedLocale =
-            localeCandidates.firstOrNull { locale ->
-                val result = tts.setLanguage(locale)
-                result != TextToSpeech.LANG_MISSING_DATA &&
-                    result != TextToSpeech.LANG_NOT_SUPPORTED
+        val locale = detectSpeechLocale(plain)
+
+        return when (locale.language) {
+            "fa" -> speakPersian(messageId, plain)
+            else -> speakWithSystemTts(messageId, plain, locale)
+        }
+    }
+
+    private fun speakPersian(
+        messageId: String,
+        plain: String,
+    ): AiChatSpeakResult {
+        stopSystemTtsOnly()
+        cancelPendingPersian()
+
+        if (persianTts.isReady.value) {
+            return dispatchPersianSpeak(messageId, plain)
+        }
+
+        // Wait for the engine without surfacing an error to the user.
+        _preparingMessageId.value = messageId
+        pendingPersianJob =
+            scope.launch {
+                try {
+                    val ready =
+                        withTimeoutOrNull(PERSIAN_READY_TIMEOUT_MS) {
+                            persianTts.isReady.first { it }
+                        }
+                    if (_preparingMessageId.value != messageId) {
+                        return@launch
+                    }
+                    if (ready != true) {
+                        _preparingMessageId.value = null
+                        return@launch
+                    }
+                    _preparingMessageId.value = null
+                    dispatchPersianSpeak(messageId, plain)
+                } catch (_: Throwable) {
+                    if (_preparingMessageId.value == messageId) {
+                        _preparingMessageId.value = null
+                    }
+                }
             }
-        if (selectedLocale == null) {
+        return AiChatSpeakResult.Ok
+    }
+
+    private fun dispatchPersianSpeak(
+        messageId: String,
+        plain: String,
+    ): AiChatSpeakResult =
+        when (
+            persianTts.speakOrStop(
+                utteranceId = messageId,
+                text = plain,
+            )
+        ) {
+            PersianTtsResult.Ok -> AiChatSpeakResult.Ok
+            PersianTtsResult.EngineNotReady -> {
+                // Should be rare after waiting; queue again rather than erroring.
+                _preparingMessageId.value = messageId
+                pendingPersianJob =
+                    scope.launch {
+                        val ready =
+                            withTimeoutOrNull(PERSIAN_READY_TIMEOUT_MS) {
+                                persianTts.isReady.first { it }
+                            }
+                        if (_preparingMessageId.value != messageId) return@launch
+                        _preparingMessageId.value = null
+                        if (ready == true) {
+                            persianTts.speakOrStop(messageId, plain)
+                        }
+                    }
+                AiChatSpeakResult.Ok
+            }
+
+            PersianTtsResult.EmptyText -> AiChatSpeakResult.EmptyText
+            is PersianTtsResult.SpeakFailed -> AiChatSpeakResult.SpeakFailed
+        }
+
+    private fun speakWithSystemTts(
+        messageId: String,
+        plain: String,
+        locale: Locale,
+    ): AiChatSpeakResult {
+        cancelPendingPersian()
+        _preparingMessageId.value = null
+
+        if (!systemReady.get()) {
+            // Queue briefly until system TTS finishes init (same UX as Persian preparing).
+            _preparingMessageId.value = messageId
+            pendingPersianJob =
+                scope.launch {
+                    val ready =
+                        withTimeoutOrNull(SYSTEM_READY_TIMEOUT_MS) {
+                            while (!systemReady.get()) {
+                                kotlinx.coroutines.delay(50L)
+                            }
+                            true
+                        }
+                    if (_preparingMessageId.value != messageId) return@launch
+                    _preparingMessageId.value = null
+                    if (ready == true) {
+                        speakWithSystemTtsNow(messageId, plain, locale)
+                    }
+                }
+            return AiChatSpeakResult.Ok
+        }
+
+        return speakWithSystemTtsNow(messageId, plain, locale)
+    }
+
+    private fun speakWithSystemTtsNow(
+        messageId: String,
+        plain: String,
+        locale: Locale,
+    ): AiChatSpeakResult {
+        val engine = systemTts ?: return AiChatSpeakResult.SpeakFailed
+
+        val languageStatus = engine.setLanguage(locale)
+        if (
+            languageStatus == TextToSpeech.LANG_MISSING_DATA ||
+            languageStatus == TextToSpeech.LANG_NOT_SUPPORTED
+        ) {
             return AiChatSpeakResult.LanguageUnavailable(
-                languageTag = localeCandidates.first().toLanguageTag(),
+                languageTag = locale.toLanguageTag(),
             )
         }
 
-        tts.setSpeechRate(1.0f)
-        tts.setPitch(1.0f)
+        persianTts.stop()
+        engine.setSpeechRate(1.0f)
+        engine.setPitch(1.0f)
 
-        stop()
+        stopSystemTtsOnly()
         _speakingMessageId.value = messageId
         val queued =
-            tts.speak(
+            engine.speak(
                 plain,
                 TextToSpeech.QUEUE_FLUSH,
                 /* params = */ null,
@@ -142,36 +307,59 @@ internal class AiChatTextToSpeech(
         return AiChatSpeakResult.Ok
     }
 
-    /** Stops the current utterance if any. */
+    /** Stops the current utterance / preparation if any. */
     fun stop() {
-        if (::tts.isInitialized && tts.isSpeaking) {
-            tts.stop()
-        }
+        cancelPendingPersian()
+        _preparingMessageId.value = null
+        persianTts.stop()
+        stopSystemTtsOnly()
         _isSpeaking.value = false
         _speakingMessageId.value = null
     }
 
-    /** Releases the underlying TTS engine. */
-    fun shutdown() {
-        stop()
-        ready.set(false)
-        if (::tts.isInitialized) {
-            tts.shutdown()
+    private fun cancelPendingPersian() {
+        pendingPersianJob?.cancel()
+        pendingPersianJob = null
+    }
+
+    private fun stopSystemTtsOnly() {
+        val engine = systemTts
+        if (engine != null) {
+            runCatching {
+                if (engine.isSpeaking) {
+                    engine.stop()
+                }
+            }
         }
     }
 
+    /** Releases the underlying TTS engines. */
+    fun shutdown() {
+        stop()
+        systemReady.set(false)
+        persianBridgeJob?.cancel()
+        persianBridgeJob = null
+        scope.cancel()
+        runCatching { persianTts.shutdown() }
+        runCatching { systemTts?.shutdown() }
+        systemTts = null
+    }
+
     companion object {
+        private const val PERSIAN_READY_TIMEOUT_MS = 60_000L
+        private const val SYSTEM_READY_TIMEOUT_MS = 10_000L
+
         private val LOCALE_FA = Locale.forLanguageTag("fa")
         private val LOCALE_AR = Locale.forLanguageTag("ar")
 
         /**
-         * Ordered TTS locale candidates for [text].
+         * Detects the TTS language for [text].
          *
-         * Only letters that do **not** appear in standard Arabic (پ چ ژ گ) force Persian first.
-         * Shared Arabic-script letters such as ی/ک are common in both languages and must not
-         * classify text as Persian — otherwise Arabic replies pick the wrong voice.
+         * - Persian-only letters (پ چ ژ گ) → Persian
+         * - Other Arabic-script text → Arabic (system TTS only)
+         * - Otherwise → English
          */
-        fun speechLocaleCandidates(text: String): List<Locale> {
+        fun detectSpeechLocale(text: String): Locale {
             var persianOnlyLetters = 0
             var arabicScript = 0
             var latinScript = 0
@@ -195,15 +383,22 @@ internal class AiChatTextToSpeech(
             }
 
             return when {
-                persianOnlyLetters > 0 -> listOf(LOCALE_FA, LOCALE_AR)
-                arabicScript > latinScript -> listOf(LOCALE_AR, LOCALE_FA)
-                else -> listOf(Locale.ENGLISH)
+                persianOnlyLetters > 0 -> LOCALE_FA
+                arabicScript > latinScript ->
+                    // Prefer Persian TTS when the app/system language is Persian; otherwise Arabic.
+                    if (Locale.getDefault().language == "fa") {
+                        LOCALE_FA
+                    } else {
+                        LOCALE_AR
+                    }
+
+                else -> Locale.ENGLISH
             }
         }
 
-        /** Prefer the primary locale from [speechLocaleCandidates]. */
-        fun detectSpeechLocale(text: String): Locale =
-            speechLocaleCandidates(text).first()
+        /** Ordered locale candidates kept for callers that need a list. */
+        fun speechLocaleCandidates(text: String): List<Locale> =
+            listOf(detectSpeechLocale(text))
 
         /** Strips common markdown so TTS reads natural prose. */
         fun plainTextForSpeech(markdown: String): String =
@@ -219,11 +414,6 @@ internal class AiChatTextToSpeech(
                 .replace(Regex("\\s+"), " ")
                 .trim()
 
-        /**
-         * Letters used in Persian that are not part of the standard Arabic alphabet.
-         *
-         * Do **not** include ک (U+06A9) or ی (U+06CC): models often emit those in Arabic too.
-         */
         private fun isPersianOnlyLetter(codePoint: Int): Boolean =
             codePoint == 0x067E || // پ
                 codePoint == 0x0686 || // چ

@@ -51,6 +51,8 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
@@ -104,7 +106,6 @@ internal fun AiChatPanel(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val messageCopiedLabel = stringResource(R.string.ai_chat_message_copied)
-    val ttsEngineNotReady = stringResource(R.string.ai_chat_tts_engine_not_ready)
     val ttsEmptyText = stringResource(R.string.ai_chat_tts_empty_text)
     val ttsSpeakFailed = stringResource(R.string.ai_chat_tts_speak_failed)
     val ttsUnavailableFa = stringResource(R.string.ai_chat_tts_language_unavailable_fa)
@@ -120,12 +121,12 @@ internal fun AiChatPanel(
     val tts = remember(context) { AiChatTextToSpeech(context) }
     val speechToText = remember(context) { AiChatSpeechToText(context) }
     val speakingMessageId by tts.speakingMessageId.collectAsState()
+    val preparingMessageId by tts.preparingMessageId.collectAsState()
     val isListening by speechToText.isListening.collectAsState()
 
     fun speakResultMessage(result: AiChatSpeakResult): String =
         when (result) {
             AiChatSpeakResult.Ok -> ""
-            AiChatSpeakResult.EngineNotReady -> ttsEngineNotReady
             AiChatSpeakResult.EmptyText -> ttsEmptyText
             AiChatSpeakResult.SpeakFailed -> ttsSpeakFailed
             is AiChatSpeakResult.LanguageUnavailable ->
@@ -287,6 +288,7 @@ internal fun AiChatPanel(
                                 AiChatMessageBubble(
                                     message = message,
                                     isSpeaking = speakingMessageId == message.id,
+                                    isPreparingSpeech = preparingMessageId == message.id,
                                     onCopyMessage = {
                                         val text = message.text
                                         if (text.isBlank()) return@AiChatMessageBubble
@@ -360,6 +362,7 @@ internal fun AiChatPanel(
  *
  * @param message Message content and role to render.
  * @param isSpeaking `true` when this message is currently being read aloud.
+ * @param isPreparingSpeech `true` while the voice engine is loading for this message.
  * @param onCopyMessage Called when the user taps the copy action for this message.
  * @param onSpeakMessage Called when the user taps the speak action for a finished model reply.
  */
@@ -367,6 +370,7 @@ internal fun AiChatPanel(
 private fun AiChatMessageBubble(
     message: AiChatMessage,
     isSpeaking: Boolean,
+    isPreparingSpeech: Boolean,
     onCopyMessage: () -> Unit,
     onSpeakMessage: () -> Unit,
 ) {
@@ -482,28 +486,46 @@ private fun AiChatMessageBubble(
                         }
                     }
                     if (canSpeak) {
+                        val preparingSpeechCd =
+                            stringResource(R.string.ai_chat_tts_preparing_cd)
                         IconButton(
                             onClick = onSpeakMessage,
                             modifier = Modifier.size(32.dp),
                         ) {
-                            Icon(
-                                imageVector =
-                                    if (isSpeaking) {
-                                        Icons.Rounded.Stop
-                                    } else {
-                                        Icons.Rounded.VolumeUp
-                                    },
-                                contentDescription =
-                                    stringResource(
-                                        if (isSpeaking) {
-                                            R.string.ai_chat_stop_speaking_cd
-                                        } else {
-                                            R.string.ai_chat_speak_message_cd
-                                        },
-                                    ),
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            when {
+                                isPreparingSpeech -> {
+                                    CircularProgressIndicator(
+                                        modifier =
+                                            Modifier
+                                                .size(18.dp)
+                                                .semantics {
+                                                    contentDescription = preparingSpeechCd
+                                                },
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+
+                                isSpeaking -> {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Stop,
+                                        contentDescription =
+                                            stringResource(R.string.ai_chat_stop_speaking_cd),
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+
+                                else -> {
+                                    Icon(
+                                        imageVector = Icons.Rounded.VolumeUp,
+                                        contentDescription =
+                                            stringResource(R.string.ai_chat_speak_message_cd),
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                     }
                 }

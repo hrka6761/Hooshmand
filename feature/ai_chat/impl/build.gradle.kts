@@ -16,6 +16,7 @@ dependencies {
     implementation(projects.core.downloadManager)
     implementation(projects.core.datastore)
     implementation(projects.core.llmRuntime)
+    implementation(projects.core.persianTts)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.mikepenz.markdown.renderer.m3)
 }

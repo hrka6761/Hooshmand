@@ -77,10 +77,10 @@
     <string name="ai_chat_message_copied">Message copied</string>
     <string name="ai_chat_speak_message_cd">Read message aloud</string>
     <string name="ai_chat_stop_speaking_cd">Stop reading</string>
-    <string name="ai_chat_tts_engine_not_ready">Voice engine is still starting. Try again in a moment.</string>
+    <string name="ai_chat_tts_preparing_cd">Preparing voice</string>
     <string name="ai_chat_tts_empty_text">Nothing to read aloud.</string>
     <string name="ai_chat_tts_speak_failed">Could not play voice for this message.</string>
-    <string name="ai_chat_tts_language_unavailable_fa">Persian offline voice is not installed. Add it in system Text-to-speech settings (download the language pack for offline use).</string>
+    <string name="ai_chat_tts_language_unavailable_fa">Persian voice is still loading. Please try again in a moment.</string>
     <string name="ai_chat_tts_language_unavailable_ar">Arabic offline voice is not installed. Add it in system Text-to-speech settings (download the language pack for offline use).</string>
     <string name="ai_chat_tts_language_unavailable_en">English offline voice is not installed. Add it in system Text-to-speech settings (download the language pack for offline use).</string>
     <string name="ai_chat_voice_input_cd">Voice input</string>

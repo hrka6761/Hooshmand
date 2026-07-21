@@ -31,6 +31,7 @@ include(":core:network")
 include(":core:data")
 include(":core:domain")
 include(":core:database")
+include(":core:persian_tts")
 
 include(":feature:home:api")
 include(":feature:home:impl")

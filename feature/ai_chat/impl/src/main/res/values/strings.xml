@@ -75,4 +75,22 @@
     <string name="ai_chat_streaming_indicator">Generating…</string>
     <string name="ai_chat_copy_message_cd">Copy message</string>
     <string name="ai_chat_message_copied">Message copied</string>
+    <string name="ai_chat_speak_message_cd">Read message aloud</string>
+    <string name="ai_chat_stop_speaking_cd">Stop reading</string>
+    <string name="ai_chat_tts_engine_not_ready">Voice engine is still starting. Try again in a moment.</string>
+    <string name="ai_chat_tts_empty_text">Nothing to read aloud.</string>
+    <string name="ai_chat_tts_speak_failed">Could not play voice for this message.</string>
+    <string name="ai_chat_tts_language_unavailable_fa">Persian offline voice is not installed. Add it in system Text-to-speech settings (download the language pack for offline use).</string>
+    <string name="ai_chat_tts_language_unavailable_ar">Arabic offline voice is not installed. Add it in system Text-to-speech settings (download the language pack for offline use).</string>
+    <string name="ai_chat_tts_language_unavailable_en">English offline voice is not installed. Add it in system Text-to-speech settings (download the language pack for offline use).</string>
+    <string name="ai_chat_voice_input_cd">Voice input</string>
+    <string name="ai_chat_voice_input_stop_cd">Stop voice input</string>
+    <string name="ai_chat_voice_input_listening">Listening…</string>
+    <string name="ai_chat_stt_not_available">Speech recognition is not available on this device.</string>
+    <string name="ai_chat_stt_permission_denied">Microphone permission is required for voice input.</string>
+    <string name="ai_chat_stt_network_or_offline">Could not recognize speech. Install an offline speech pack for Persian, Arabic, or English, or check your connection.</string>
+    <string name="ai_chat_stt_no_match">Didn’t catch that. Please try again.</string>
+    <string name="ai_chat_stt_busy">Voice input is busy. Please try again.</string>
+    <string name="ai_chat_stt_audio_error">Could not access the microphone. Please try again.</string>
+    <string name="ai_chat_stt_error">Voice input failed. Please try again.</string>
 </resources>

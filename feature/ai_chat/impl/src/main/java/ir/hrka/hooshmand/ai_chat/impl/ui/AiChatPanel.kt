@@ -21,7 +21,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,7 +35,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -44,14 +49,24 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
+import android.Manifest
 import android.content.ClipData
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import ir.hrka.hooshmand.ai_chat.impl.AiChatMessage
 import ir.hrka.hooshmand.ai_chat.impl.AiChatMessageRole
 import ir.hrka.hooshmand.ai_chat.impl.R
+import ir.hrka.hooshmand.ai_chat.impl.speech.AiChatListenResult
+import ir.hrka.hooshmand.ai_chat.impl.speech.AiChatSpeakResult
+import ir.hrka.hooshmand.ai_chat.impl.speech.AiChatSpeechToText
+import ir.hrka.hooshmand.ai_chat.impl.speech.AiChatTextToSpeech
 import kotlinx.coroutines.launch
 
 /**
@@ -85,15 +100,136 @@ internal fun AiChatPanel(
 ) {
     val listState = rememberLazyListState()
     val clipboard = LocalClipboard.current
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val messageCopiedLabel = stringResource(R.string.ai_chat_message_copied)
+    val ttsEngineNotReady = stringResource(R.string.ai_chat_tts_engine_not_ready)
+    val ttsEmptyText = stringResource(R.string.ai_chat_tts_empty_text)
+    val ttsSpeakFailed = stringResource(R.string.ai_chat_tts_speak_failed)
+    val ttsUnavailableFa = stringResource(R.string.ai_chat_tts_language_unavailable_fa)
+    val ttsUnavailableAr = stringResource(R.string.ai_chat_tts_language_unavailable_ar)
+    val ttsUnavailableEn = stringResource(R.string.ai_chat_tts_language_unavailable_en)
+    val sttNotAvailable = stringResource(R.string.ai_chat_stt_not_available)
+    val sttPermissionDenied = stringResource(R.string.ai_chat_stt_permission_denied)
+    val sttNetworkOrOffline = stringResource(R.string.ai_chat_stt_network_or_offline)
+    val sttNoMatch = stringResource(R.string.ai_chat_stt_no_match)
+    val sttBusy = stringResource(R.string.ai_chat_stt_busy)
+    val sttAudioError = stringResource(R.string.ai_chat_stt_audio_error)
+    val sttError = stringResource(R.string.ai_chat_stt_error)
+    val tts = remember(context) { AiChatTextToSpeech(context) }
+    val speechToText = remember(context) { AiChatSpeechToText(context) }
+    val speakingMessageId by tts.speakingMessageId.collectAsState()
+    val isListening by speechToText.isListening.collectAsState()
+
+    fun speakResultMessage(result: AiChatSpeakResult): String =
+        when (result) {
+            AiChatSpeakResult.Ok -> ""
+            AiChatSpeakResult.EngineNotReady -> ttsEngineNotReady
+            AiChatSpeakResult.EmptyText -> ttsEmptyText
+            AiChatSpeakResult.SpeakFailed -> ttsSpeakFailed
+            is AiChatSpeakResult.LanguageUnavailable ->
+                when {
+                    result.languageTag.startsWith("fa") -> ttsUnavailableFa
+                    result.languageTag.startsWith("ar") -> ttsUnavailableAr
+                    else -> ttsUnavailableEn
+                }
+        }
+
+    fun listenErrorMessage(hint: AiChatListenResult.ErrorHint): String =
+        when (hint) {
+            AiChatListenResult.ErrorHint.Permission -> sttPermissionDenied
+            AiChatListenResult.ErrorHint.NetworkOrOffline -> sttNetworkOrOffline
+            AiChatListenResult.ErrorHint.NoMatch -> sttNoMatch
+            AiChatListenResult.ErrorHint.Busy -> sttBusy
+            AiChatListenResult.ErrorHint.Audio -> sttAudioError
+            AiChatListenResult.ErrorHint.Client,
+            AiChatListenResult.ErrorHint.Server,
+            AiChatListenResult.ErrorHint.Unknown,
+            -> sttError
+        }
+
+    fun startVoiceInput() {
+        if (!speechToText.isAvailable()) {
+            scope.launch { snackbarHostState.showSnackbar(sttNotAvailable) }
+            return
+        }
+        tts.stop()
+        // Always replace whatever is in the field with the new voice transcript.
+        onInputTextChanged("")
+        val result =
+            speechToText.start(
+                onPartial = { partial ->
+                    onInputTextChanged(partial.trim())
+                },
+                onFinal = { finalText ->
+                    onInputTextChanged(finalText.trim())
+                },
+                onError = { hint ->
+                    scope.launch {
+                        snackbarHostState.showSnackbar(listenErrorMessage(hint))
+                    }
+                },
+            )
+        when (result) {
+            AiChatListenResult.NotAvailable ->
+                scope.launch { snackbarHostState.showSnackbar(sttNotAvailable) }
+
+            AiChatListenResult.Busy ->
+                scope.launch { snackbarHostState.showSnackbar(sttBusy) }
+
+            else -> Unit
+        }
+    }
+
+    val micPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            if (granted) {
+                startVoiceInput()
+            } else {
+                scope.launch { snackbarHostState.showSnackbar(sttPermissionDenied) }
+            }
+        }
+
+    fun onMicClick() {
+        if (isListening) {
+            speechToText.stop()
+            return
+        }
+        val hasMicPermission =
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO,
+            ) == PackageManager.PERMISSION_GRANTED
+        if (hasMicPermission) {
+            startVoiceInput()
+        } else {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    DisposableEffect(tts, speechToText) {
+        onDispose {
+            tts.shutdown()
+            speechToText.destroy()
+        }
+    }
 
     // reverseLayout pins index 0 to the visual bottom. When the user sends a new message while
     // scrolled up in history, animate back to the newest item (index 0).
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(0)
+        }
+    }
+
+    // Stop playback / listening when generation starts.
+    LaunchedEffect(isGenerating) {
+        if (isGenerating) {
+            tts.stop()
+            speechToText.stop()
         }
     }
 
@@ -150,6 +286,7 @@ internal fun AiChatPanel(
                             ) { message ->
                                 AiChatMessageBubble(
                                     message = message,
+                                    isSpeaking = speakingMessageId == message.id,
                                     onCopyMessage = {
                                         val text = message.text
                                         if (text.isBlank()) return@AiChatMessageBubble
@@ -160,6 +297,20 @@ internal fun AiChatPanel(
                                                 ),
                                             )
                                             snackbarHostState.showSnackbar(messageCopiedLabel)
+                                        }
+                                    },
+                                    onSpeakMessage = {
+                                        val result =
+                                            tts.speakOrStop(
+                                                messageId = message.id,
+                                                text = message.text,
+                                            )
+                                        if (result !is AiChatSpeakResult.Ok) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    speakResultMessage(result),
+                                                )
+                                            }
                                         }
                                     },
                                 )
@@ -184,10 +335,12 @@ internal fun AiChatPanel(
             AiChatMessageInput(
                 inputText = inputText,
                 isGenerating = isGenerating,
+                isListening = isListening,
                 enabled = !isModelInitializing,
                 onInputTextChanged = onInputTextChanged,
                 onSendMessage = onSendMessage,
                 onStopGeneration = onStopGeneration,
+                onMicClick = ::onMicClick,
                 focusRequester = focusRequester,
             )
         }
@@ -206,15 +359,20 @@ internal fun AiChatPanel(
  * One chat bubble aligned by [AiChatMessage.role], matching Gallery user/agent placement.
  *
  * @param message Message content and role to render.
+ * @param isSpeaking `true` when this message is currently being read aloud.
  * @param onCopyMessage Called when the user taps the copy action for this message.
+ * @param onSpeakMessage Called when the user taps the speak action for a finished model reply.
  */
 @Composable
 private fun AiChatMessageBubble(
     message: AiChatMessage,
+    isSpeaking: Boolean,
     onCopyMessage: () -> Unit,
+    onSpeakMessage: () -> Unit,
 ) {
     val isUser = message.role == AiChatMessageRole.User
     val isError = message.role == AiChatMessageRole.Error
+    val isModel = message.role == AiChatMessageRole.Model
     val alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
     val horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
     val backgroundColor =
@@ -246,6 +404,7 @@ private fun AiChatMessageBubble(
             )
         }
     val canCopy = message.text.isNotBlank()
+    val canSpeak = isModel && !message.isStreaming && message.text.isNotBlank()
 
     Box(
         modifier = Modifier.fillMaxWidth(),
@@ -303,17 +462,50 @@ private fun AiChatMessageBubble(
                 }
             }
 
-            if (canCopy) {
-                IconButton(
-                    onClick = onCopyMessage,
-                    modifier = Modifier.size(32.dp),
+            if (canCopy || canSpeak) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.ContentCopy,
-                        contentDescription = stringResource(R.string.ai_chat_copy_message_cd),
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (canCopy) {
+                        IconButton(
+                            onClick = onCopyMessage,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ContentCopy,
+                                contentDescription =
+                                    stringResource(R.string.ai_chat_copy_message_cd),
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (canSpeak) {
+                        IconButton(
+                            onClick = onSpeakMessage,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector =
+                                    if (isSpeaking) {
+                                        Icons.Rounded.Stop
+                                    } else {
+                                        Icons.Rounded.VolumeUp
+                                    },
+                                contentDescription =
+                                    stringResource(
+                                        if (isSpeaking) {
+                                            R.string.ai_chat_stop_speaking_cd
+                                        } else {
+                                            R.string.ai_chat_speak_message_cd
+                                        },
+                                    ),
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -321,91 +513,100 @@ private fun AiChatMessageBubble(
 }
 
 /**
- * Bottom input row with a bordered text field and Send or Stop action, as in Gallery.
+ * Bottom input row with a bordered text field, optional voice input, and Send or Stop action.
  *
  * @param inputText Current draft text.
  * @param isGenerating When `true`, shows Stop instead of Send.
+ * @param isListening When `true`, the mic button shows an active listening state.
  * @param enabled When `false`, disables typing and actions (e.g. while the model loads).
  * @param onInputTextChanged Called on text edits.
  * @param onSendMessage Called when Send is tapped.
  * @param onStopGeneration Called when Stop is tapped.
+ * @param onMicClick Called when the voice-input mic is tapped.
  * @param focusRequester Passed to the [TextField] to manage focus.
  */
 @Composable
 private fun AiChatMessageInput(
     inputText: String,
     isGenerating: Boolean,
+    isListening: Boolean,
     enabled: Boolean,
     onInputTextChanged: (String) -> Unit,
     onSendMessage: () -> Unit,
     onStopGeneration: () -> Unit,
+    onMicClick: () -> Unit,
     focusRequester: FocusRequester,
 ) {
-    val canSend = enabled && !isGenerating && inputText.isNotBlank()
+    val canSend = enabled && !isGenerating && !isListening && inputText.isNotBlank()
+    val canUseMic = enabled && !isGenerating
 
-    Row(
+    Column(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        TextField(
-            value = inputText,
-            onValueChange = onInputTextChanged,
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .focusRequester(focusRequester)
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        shape = RoundedCornerShape(16.dp),
-                    ),
-            enabled = enabled && !isGenerating,
-            placeholder = {
-                Text(text = stringResource(R.string.ai_chat_input_placeholder))
-            },
-            colors =
-                TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                ),
-            maxLines = 5,
-        )
+        if (isListening) {
+            Text(
+                text = stringResource(R.string.ai_chat_voice_input_listening),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
 
-        if (isGenerating) {
-            IconButton(
-                onClick = onStopGeneration,
-                colors =
-                    IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TextField(
+                value = inputText,
+                onValueChange = onInputTextChanged,
                 modifier =
                     Modifier
-                        .size(48.dp)
-                        .clip(CircleShape),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Stop,
-                    contentDescription = stringResource(R.string.ai_chat_stop),
-                )
-            }
-        } else {
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .focusRequester(focusRequester)
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            shape = RoundedCornerShape(16.dp),
+                        ),
+                enabled = enabled && !isGenerating,
+                placeholder = {
+                    Text(text = stringResource(R.string.ai_chat_input_placeholder))
+                },
+                colors =
+                    TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                maxLines = 5,
+            )
+
             IconButton(
-                onClick = onSendMessage,
-                enabled = canSend,
+                onClick = onMicClick,
+                enabled = canUseMic,
                 colors =
                     IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        containerColor =
+                            if (isListening) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                        contentColor =
+                            if (isListening) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                         disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
@@ -415,9 +616,57 @@ private fun AiChatMessageInput(
                         .clip(CircleShape),
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.Send,
-                    contentDescription = stringResource(R.string.ai_chat_send),
+                    imageVector = if (isListening) Icons.Rounded.Stop else Icons.Rounded.Mic,
+                    contentDescription =
+                        stringResource(
+                            if (isListening) {
+                                R.string.ai_chat_voice_input_stop_cd
+                            } else {
+                                R.string.ai_chat_voice_input_cd
+                            },
+                        ),
                 )
+            }
+
+            if (isGenerating) {
+                IconButton(
+                    onClick = onStopGeneration,
+                    colors =
+                        IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        ),
+                    modifier =
+                        Modifier
+                            .size(48.dp)
+                            .clip(CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Stop,
+                        contentDescription = stringResource(R.string.ai_chat_stop),
+                    )
+                }
+            } else {
+                IconButton(
+                    onClick = onSendMessage,
+                    enabled = canSend,
+                    colors =
+                        IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    modifier =
+                        Modifier
+                            .size(48.dp)
+                            .clip(CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.Send,
+                        contentDescription = stringResource(R.string.ai_chat_send),
+                    )
+                }
             }
         }
     }

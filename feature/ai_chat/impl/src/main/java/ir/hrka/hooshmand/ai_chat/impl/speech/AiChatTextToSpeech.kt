@@ -411,7 +411,12 @@ internal class AiChatTextToSpeech(
                 .replace(Regex("(\\*\\*|__|\\*|_|~~)"), "")
                 .replace(Regex("^\\s*[-*+]\\s+", RegexOption.MULTILINE), "")
                 .replace(Regex("^\\s*\\d+\\.\\s+", RegexOption.MULTILINE), "")
-                .replace(Regex("\\s+"), " ")
+                // Keep song/lyric structure: lines → soft pause, paragraphs → stop.
+                .replace(Regex("\\r\\n?"), "\n")
+                .replace(Regex("\\n{2,}"), ". ")
+                .replace(Regex("\\n"), "، ")
+                .replace(Regex("[\\t\\f\\v]+"), " ")
+                .replace(Regex(" +"), " ")
                 .trim()
 
         private fun isPersianOnlyLetter(codePoint: Int): Boolean =

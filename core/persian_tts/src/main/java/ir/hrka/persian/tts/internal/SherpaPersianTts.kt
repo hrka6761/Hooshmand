@@ -198,10 +198,9 @@ internal class SherpaPersianTts(
     /**
      * Runs synthesis and blocking playback on the worker thread.
      *
-     * Long text is split into short segments. Each segment is generated with
-     * `OfflineTts.generate` and written to [track] before the next segment is
-     * synthesized, so the listener hears audio after the first segment instead
-     * of waiting for the entire utterance.
+     * Text is split so `.` and `:` become audible short pauses (silence
+     * inserted between synthesized segments). Longer spans are chunked for
+     * lower time-to-first-audio.
      *
      * @param engine Loaded sherpa OfflineTts instance.
      * @param track Initialized [AudioTrack] at the model sample rate.
@@ -228,6 +227,7 @@ internal class SherpaPersianTts(
                 return
             }
 
+            val sampleRate = engine.sampleRate()
             var wroteAny = false
             for (segment in segments) {
                 if (shutDown.get() || stopRequested.get()) {
@@ -236,7 +236,7 @@ internal class SherpaPersianTts(
 
                 // generate() (not generateWithCallback): Kotlin/JNI lambdas crash
                 // on modern AGP/D8 with NoSuchMethodError for invoke([F)Integer.
-                val samples = engine.generate(text = segment, sid = 0, speed = SPEECH_SPEED).samples
+                val samples = engine.generate(text = segment.text, sid = 0, speed = SPEECH_SPEED).samples
                 if (samples.isEmpty()) {
                     Log.w(TAG, "Empty audio for segment of utterance=$utteranceId")
                     continue
@@ -248,6 +248,10 @@ internal class SherpaPersianTts(
                 ensurePlaying(track)
                 writeSamples(track, samples)
                 wroteAny = true
+
+                if (segment.pauseAfterMs > 0) {
+                    writeSilence(track, sampleRate, segment.pauseAfterMs)
+                }
             }
 
             if (!wroteAny) {
@@ -269,34 +273,101 @@ internal class SherpaPersianTts(
     }
 
     /**
-     * Splits [text] into short speakable segments for lower time-to-first-audio.
+     * One synthesis unit plus optional silence to play after it.
      *
-     * Prefers sentence-ending punctuation (including Persian `؟` / `۔`), then
-     * further splits oversized spans on whitespace so a single run-on sentence
-     * cannot recreate the full-utterance latency problem.
+     * @property text Plain text passed to `OfflineTts.generate`.
+     * @property pauseAfterMs Silence after this unit (`0` = none). Used for
+     *   audible pauses at `.` and `:`.
+     */
+    private data class SpeechSegment(
+        val text: String,
+        val pauseAfterMs: Int = 0,
+    )
+
+    /**
+     * Splits [text] into speakable segments with explicit pauses at `.` and `:`.
+     *
+     * Periods keep their `.` on the preceding segment; colons are consumed as
+     * delimiters. Times such as `3:45` are not treated as pause colons (no
+     * whitespace after `:`).
      *
      * @param text Normalized plain prose.
      * @return Non-blank segments in order; empty if [text] is blank.
      */
-    private fun splitForStreamingSpeech(text: String): List<String> {
+    private fun splitForStreamingSpeech(text: String): List<SpeechSegment> {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return emptyList()
-        if (trimmed.length <= MAX_SEGMENT_CHARS) return listOf(trimmed)
 
-        val bySentence = SENTENCE_SPLIT_REGEX.split(trimmed).map { it.trim() }.filter { it.isNotEmpty() }
-        if (bySentence.isEmpty()) {
-            return chunkByWords(trimmed, MAX_SEGMENT_CHARS)
-        }
+        val hard = splitOnPausePunctuation(trimmed)
+        if (hard.isEmpty()) return emptyList()
 
-        val segments = ArrayList<String>(bySentence.size)
-        for (sentence in bySentence) {
-            if (sentence.length <= MAX_SEGMENT_CHARS) {
-                segments += sentence
+        val expanded = ArrayList<SpeechSegment>(hard.size)
+        for (segment in hard) {
+            if (segment.text.length <= MAX_SEGMENT_CHARS) {
+                expanded += segment
             } else {
-                segments += chunkByWords(sentence, MAX_SEGMENT_CHARS)
+                val parts = chunkByWords(segment.text, MAX_SEGMENT_CHARS)
+                parts.forEachIndexed { index, part ->
+                    expanded +=
+                        SpeechSegment(
+                            text = part,
+                            pauseAfterMs =
+                                if (index == parts.lastIndex) segment.pauseAfterMs else 0,
+                        )
+                }
             }
         }
+        return expanded
+    }
+
+    /**
+     * Hard-splits on `.` (when followed by whitespace) and on `: ` / `： `.
+     *
+     * @param text Source prose.
+     * @return Segments with [SpeechSegment.pauseAfterMs] set for pause delimiters.
+     */
+    private fun splitOnPausePunctuation(text: String): List<SpeechSegment> {
+        val segments = ArrayList<SpeechSegment>()
+        var start = 0
+        for (match in PAUSE_BOUNDARY_REGEX.findAll(text)) {
+            val piece = text.substring(start, match.range.first).trim()
+            val pauseMs =
+                if (COLON_DELIMITER_REGEX.containsMatchIn(match.value)) {
+                    PAUSE_AFTER_COLON_MS
+                } else {
+                    PAUSE_AFTER_PERIOD_MS
+                }
+            if (piece.isNotEmpty()) {
+                segments += SpeechSegment(text = piece, pauseAfterMs = pauseMs)
+            }
+            start = match.range.last + 1
+        }
+        val tail = text.substring(start).trim()
+        if (tail.isNotEmpty()) {
+            segments += SpeechSegment(text = tail, pauseAfterMs = 0)
+        }
         return segments
+    }
+
+    /**
+     * Writes [durationMs] of mono PCM silence to [track].
+     *
+     * @param track Destination track (should already be playing).
+     * @param sampleRate Track / model sample rate in Hz.
+     * @param durationMs Pause length in milliseconds.
+     */
+    private fun writeSilence(
+        track: AudioTrack,
+        sampleRate: Int,
+        durationMs: Int,
+    ) {
+        if (durationMs <= 0 || shutDown.get() || stopRequested.get()) return
+        val count =
+            ((sampleRate.toLong() * durationMs) / 1000L)
+                .toInt()
+                .coerceAtLeast(1)
+        ensurePlaying(track)
+        writeSamples(track, FloatArray(count))
     }
 
     /**
@@ -502,10 +573,15 @@ internal class SherpaPersianTts(
     }
 
     /**
-     * Strips common markdown markers so the synthesizer receives plain prose.
+     * Strips common markdown and shapes punctuation so speech keeps natural
+     * rhythm (songs / titled sections included).
+     *
+     * Line breaks become Persian commas (soft pause) instead of being erased,
+     * which otherwise turns lyrics into a flat word stream. Paragraph breaks
+     * become sentence ends.
      *
      * @param text Raw user/model text (may include fenced code, links, emphasis).
-     * @return Collapsed plain text, or blank if nothing remain.
+     * @return Collapsed plain text shaped for Piper prosody, or blank if empty.
      */
     private fun normalizeText(text: String): String =
         text
@@ -517,7 +593,12 @@ internal class SherpaPersianTts(
             .replace(Regex("(\\*\\*|__|\\*|_|~~)"), "")
             .replace(Regex("^\\s*[-*+]\\s+", RegexOption.MULTILINE), "")
             .replace(Regex("^\\s*\\d+\\.\\s+", RegexOption.MULTILINE), "")
-            .replace(Regex("\\s+"), " ")
+            // Preserve song/lyric line structure as soft pauses before flatten.
+            .replace(Regex("\\r\\n?"), "\n")
+            .replace(Regex("\\n{2,}"), ". ")
+            .replace(Regex("\\n"), "، ")
+            .replace(Regex("[\\t\\f\\v]+"), " ")
+            .replace(Regex(" +"), " ")
             .trim()
 
     private companion object {
@@ -531,18 +612,25 @@ internal class SherpaPersianTts(
          */
         const val SPEECH_SPEED = 0.85f
 
-        /**
-         * Soft max characters per synthesis segment.
-         *
-         * Small enough that the first `generate()` returns quickly; large enough
-         * to avoid choppy per-word synthesis.
-         */
-        const val MAX_SEGMENT_CHARS = 140
+        /** Short audible pause after `.` (milliseconds of silence). */
+        const val PAUSE_AFTER_PERIOD_MS = 320
+
+        /** Short audible pause after `:` (milliseconds of silence). */
+        const val PAUSE_AFTER_COLON_MS = 320
 
         /**
-         * Splits after sentence-ending punctuation (Latin + Persian) or newlines,
-         * keeping the terminator with the preceding segment.
+         * Hard max characters per synthesis segment (latency ceiling).
          */
-        val SENTENCE_SPLIT_REGEX = Regex("""(?<=[.!?؟۔])\s+|\n+""")
+        const val MAX_SEGMENT_CHARS = 320
+
+        /**
+         * Matches pause delimiters:
+         * - `.` followed by whitespace (keeps the period on the left segment)
+         * - `:` / `：` with whitespace after (skips times like `3:45`)
+         */
+        val PAUSE_BOUNDARY_REGEX = Regex("""(?<=\.)\s+|\s*[:：]\s+""")
+
+        /** Detects colon delimiters inside a [PAUSE_BOUNDARY_REGEX] match. */
+        val COLON_DELIMITER_REGEX = Regex("""[:：]""")
     }
 }
